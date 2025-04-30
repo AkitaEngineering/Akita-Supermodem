@@ -1,0 +1,8 @@
+# Core dependencies for Akita Supermodem
+protobuf>=3.19.0,<5.0.0 # Check compatibility with your protoc version
+meshtastic>=2.0.0 # Specify the version you are targeting
+
+# Optional dependencies for development/testing
+# pytest
+# black
+# flake8
