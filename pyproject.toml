@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "akita-supermodem"
+version = "0.1.0"
+authors = [
+  { name="Akita Engineering", email="info@akitaengineering.com" },
+]
+description = "Robust file transfer protocol for Meshtastic networks"
+readme = "README.md"
+license = { file="LICENSE" } # Refers to the LICENSE file (should contain GPLv3 text)
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)", # Updated classifier
+    "Operating System :: OS Independent",
+    "Topic :: Communications",
+    "Topic :: System :: Networking",
+    "Intended Audience :: Developers",
+    "Development Status :: 3 - Alpha", # Adjust as appropriate
+]
+dependencies = [
+    "protobuf>=3.19.0,<5.0.0",
+    "meshtastic>=2.0.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/AkitaEngineering/akita-supermodem"
+"Bug Tracker" = "https://github.com/AkitaEngineering/akita-supermodem/issues"
+"Website" = "https://www.akitaengineering.com"
+
+# Optional: Specify entry points for command-line scripts if you add a CLI
+# [project.scripts]
+# akita-send = "akita_supermodem.cli:send_main"
+# akita-receive = "akita_supermodem.cli:receive_main"
+
