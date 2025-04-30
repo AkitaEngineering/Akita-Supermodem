@@ -1,0 +1,59 @@
+// Define the protocol buffer messages for Akita Supermodem
+syntax = "proto3";
+
+package akita; // Optional: Add a package name for better organization
+
+// Message sent by the sender to initiate a file transfer.
+message FileStart {
+  // The base name of the file being sent (e.g., "image.jpg").
+  string filename = 1;
+  // Total size of the file in bytes.
+  uint32 total_size = 2;
+  // The size of each piece/chunk in bytes (except possibly the last one).
+  // Must be > 0 if total_size > 0.
+  uint32 piece_size = 3;
+  // Optional: The root hash (hex string) of a Merkle tree built from piece hashes (SHA256).
+  // Provides efficient integrity verification for the entire file.
+  optional string merkle_root = 4;
+  // List of SHA256 hashes (hex strings) for each piece. Used if merkle_root is not provided,
+  // or for verifying individual pieces upon receipt. The number of hashes should
+  // match the calculated number of pieces.
+  repeated string piece_hashes = 5;
+}
+
+// Message carrying a single piece (chunk) of the file data.
+message PieceData {
+  // The zero-based index of this piece in the sequence.
+  uint32 piece_index = 1;
+  // The raw bytes of the file piece.
+  bytes data = 2;
+}
+
+// Message sent by the receiver to the sender to request missing pieces
+// and acknowledge received ones.
+message ResumeRequest {
+  // List of piece indices that the receiver needs (missing or corrupted).
+  repeated uint32 missing_indices = 1;
+  // List of piece indices that the receiver has successfully received and verified (best effort).
+  // Helps the sender track progress and potentially adjust rate.
+  repeated uint32 acknowledged_indices = 2;
+}
+
+// Message sent by the receiver to acknowledge receipt of a specific piece.
+// Note: Currently unused in the Python implementation, acknowledgements are
+// bundled within ResumeRequest. Could be used for simpler, immediate ACKs if needed.
+message Acknowledgement {
+  // The zero-based index of the piece being acknowledged.
+  uint32 piece_index = 1;
+}
+
+// Wrapper message containing one of the specific Akita message types.
+// This allows sending different control/data messages over the same channel (PortNum).
+message AkitaMessage {
+  oneof payload {
+    FileStart file_start = 1;
+    PieceData piece_data = 2;
+    ResumeRequest resume_request = 3;
+    Acknowledgement acknowledgement = 4;
+  }
+}
