@@ -13,7 +13,7 @@ Akita Supermodem is a Python library implementing a robust file transfer protoco
 * **File Segmentation:** Transfers large files by splitting them into smaller pieces.
 * **Integrity Checking:** Uses SHA256 hashes for individual pieces and optional Merkle Trees for overall file verification.
 * **Resume Capability:** Receivers can request missing or corrupted pieces, allowing transfers to recover from interruptions.
-* **Rate Control:** Sender adjusts transmission speed based on acknowledgements and retries (basic implementation).
+* **Rate Control:** Sender adjusts transmission speed based on acknowledgements and retries.
 * **Protocol Buffers:** Uses efficient Protobuf messages for communication.
 * **Meshtastic Integration:** Designed to work as a module within the Meshtastic ecosystem using a specific PortNum.
 
@@ -42,7 +42,7 @@ akita-supermodem/
 │   ├── index.md         # Documentation entry point
 │   ├── protocol.md      # Protocol details
 │   └── usage.md         # Usage guide
-└── tests/               # Unit tests (to be implemented)
+└── tests/               # Unit test
 ├── init.py
 # ... test files ...
 ```
