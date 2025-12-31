@@ -12,6 +12,7 @@ import sys
 import time
 import argparse
 import os
+import logging
 
 # Attempt to import meshtastic and Akita components
 try:
@@ -21,7 +22,7 @@ try:
     # but the receiver needs a way to send ResumeRequests back.
     # from akita_supermodem.sender import AkitaSender
     from akita_supermodem.receiver import AkitaReceiver
-    from akita_supermodem.common import AKITA_CONTENT_TYPE, DEFAULT_TIMEOUT, DEFAULT_MAX_RETRIES
+    from akita_supermodem.common import AKITA_CONTENT_TYPE, DEFAULT_TIMEOUT, DEFAULT_MAX_RETRIES, sanitize_filename
     # Ensure generated protobuf code is available
     from akita_supermodem.generated import akita_pb2
 except ImportError as e:
@@ -74,8 +75,8 @@ def save_file_callback(filename: str, data: bytes):
              print(f"Error creating directory {save_dir}: {e}. Saving to current directory instead.")
              save_dir = "." # Fallback to current directory
 
-    # Basic filename sanitization to prevent path traversal
-    safe_filename = os.path.basename(filename)
+    # Sanitize filename to prevent path traversal attacks
+    safe_filename = sanitize_filename(filename)
     # Avoid overwriting existing files by adding a number suffix
     base, ext = os.path.splitext(safe_filename)
     counter = 1
@@ -190,6 +191,12 @@ def main():
     parser.add_argument("--interval", type=float, default=15.0, help="Seconds between periodic checks for sending missing piece requests (default: 15.0).")
 
     args = parser.parse_args()
+    
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
 
     # --- Initialize Meshtastic and Akita Receiver ---
     mesh_interface = get_meshtastic_interface(args.port)

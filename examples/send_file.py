@@ -12,6 +12,7 @@ import sys
 import time
 import argparse
 import os
+import logging
 
 # Attempt to import meshtastic and Akita components
 try:
@@ -19,7 +20,7 @@ try:
     import meshtastic.serial_interface
     from akita_supermodem.sender import AkitaSender
     from akita_supermodem.receiver import AkitaReceiver # Needed to handle ACKs/Resumes
-    from akita_supermodem.common import AKITA_CONTENT_TYPE
+    from akita_supermodem.common import AKITA_CONTENT_TYPE, DEFAULT_PIECE_SIZE
     # Ensure generated protobuf code is available
     from akita_supermodem.generated import akita_pb2
 except ImportError as e:
@@ -147,6 +148,12 @@ def main():
 
 
     args = parser.parse_args()
+    
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
 
     if not args.recipient_id.startswith('!'):
         print("Warning: Recipient ID usually starts with '!', e.g., !aabbccdd. Ensure format is correct.")

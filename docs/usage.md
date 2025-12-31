@@ -5,14 +5,40 @@ This guide explains how to use the `AkitaSender` and `AkitaReceiver` classes in 
 ## Prerequisites
 
 * Ensure Akita Supermodem is installed (`pip install .` or `pip install -r requirements.txt` after cloning).
-* Make sure the protobuf code is generated (`protoc ...` command from README).
+* Make sure the protobuf code is generated (`protoc ...` command from README), or use the included stub for testing.
 * Have the `meshtastic` Python library installed.
 * Have a configured Meshtastic device connected and accessible via the `meshtastic` library (e.g., `meshtastic.SerialInterface`).
+* Configure logging in your application (see Logging section below).
+
+## Logging Configuration
+
+Akita Supermodem uses Python's standard `logging` module. Configure logging before using the library:
+
+```python
+import logging
+
+# Basic configuration
+logging.basicConfig(
+    level=logging.INFO,  # Use DEBUG for verbose output, WARNING for less output
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+# Or configure specific loggers
+logger = logging.getLogger('akita_supermodem')
+logger.setLevel(logging.DEBUG)
+```
+
+**Log Levels:**
+- `DEBUG`: Detailed information for debugging (piece-by-piece transfers)
+- `INFO`: General informational messages (transfer start/complete, resume requests)
+- `WARNING`: Warning messages (missing pieces, hash mismatches)
+- `ERROR`: Error messages (send failures, protocol errors)
+- `CRITICAL`: Critical errors (file corruption, transfer failures)
 
 ## Core Components
 
-* **`AkitaSender(mesh_api, ...)`**: Manages sending files. Requires the Meshtastic interface object.
-* **`AkitaReceiver(save_function, send_function, ...)`**: Manages receiving files. Requires callback functions for saving completed files and for sending `ResumeRequest` messages back.
+* **`AkitaSender(mesh_api, ...)`**: Manages sending files. Requires the Meshtastic interface object. Features memory-efficient streaming and thread-safe operation.
+* **`AkitaReceiver(save_function, send_function, ...)`**: Manages receiving files. Requires callback functions for saving completed files and for sending `ResumeRequest` messages back. Automatically sanitizes filenames for security.
 * **`on_receive` Callback**: A function you register with the Meshtastic interface (`mesh_api.add_on_receive(your_callback)`) to process incoming packets. This callback needs to:
     * Check if the packet's `portNum` matches `AKITA_CONTENT_TYPE`.
     * Deserialize the payload into an `akita_pb2.AkitaMessage`.
@@ -48,8 +74,8 @@ def my_save_function(filename: str, data: bytes):
     save_dir = "downloaded_files" # Define save directory
     os.makedirs(save_dir, exist_ok=True) # Create directory if it doesn't exist
 
-    # Basic sanitization and unique naming
-    safe_filename = os.path.basename(filename)
+    # Filename is already sanitized by AkitaReceiver, but we can add additional uniqueness
+    safe_filename = filename  # Already sanitized by receiver
     base, ext = os.path.splitext(safe_filename)
     counter = 1
     filepath = os.path.join(save_dir, safe_filename)
@@ -144,6 +170,13 @@ def my_on_receive(packet, interface): # Matched function signature for add_on_re
 # --- Main Application Logic ---
 def main_app():
     global mesh_interface, sender, receiver
+    
+    # Configure logging
+    import logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
 
     parser = argparse.ArgumentParser(description="Run Akita Supermodem node (Send/Receive).")
     parser.add_argument("--send", metavar="FILE", help="Send the specified file.")
@@ -230,4 +263,30 @@ if __name__ == "__main__":
 
     main_app()
 
-Key ConsiderationsError Handling: The examples provide basic error handling. Robust applications should implement more comprehensive checks (file existence, permissions, Meshtastic connection state, message parsing errors).Threading/Async: For more complex applications, especially GUIs or services, consider running the Meshtastic interface and Akita logic in separate threads or using asynchronous programming (asyncio) to avoid blocking the main application flow. The meshtastic library offers ThreadedSerialInterface which can help manage this.State Management:
+## Key Considerations
+
+### Error Handling
+The examples provide basic error handling. Robust applications should implement more comprehensive checks:
+- File existence and permissions
+- Meshtastic connection state
+- Message parsing errors
+- Transfer timeout handling
+
+### Threading/Async
+Akita Supermodem is fully thread-safe and supports concurrent transfers. For more complex applications, especially GUIs or services:
+- The library uses `threading.Lock` internally for thread safety
+- Consider running the Meshtastic interface and Akita logic in separate threads
+- The meshtastic library offers `ThreadedSerialInterface` which can help manage this
+- Multiple transfers can run concurrently safely
+
+### Memory Management
+- Large files are automatically streamed in chunks (no need to load entire file into memory)
+- The sender reads files piece-by-piece to minimize memory usage
+- For very large files, consider adjusting `piece_size` parameter
+
+### Security
+- Filenames are automatically sanitized by the receiver to prevent path traversal attacks
+- The `sanitize_filename()` function removes dangerous characters and path components
+- Received files are saved with sanitized filenames only
+
+### State Management
