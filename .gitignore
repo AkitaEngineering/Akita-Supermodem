@@ -1,10 +1,3 @@
-# AI/Cursor generated documentation files
-CODE_REVIEW.md
-CODE_REVIEW_STATUS.md
-IMPROVEMENTS_SUMMARY.md
-DOCUMENTATION_UPDATES.md
-ADDITIONAL_IMPROVEMENTS.md
-
 # Python
 __pycache__/
 *.py[cod]
@@ -68,4 +61,12 @@ Thumbs.db
 # Project specific
 *.log
 *.tmp
+
+# Review files
+
+CODE_REVIEW.md
+CODE_REVIEW_STATUS.md
+IMPROVEMENTS_SUMMARY.md
+DOCUMENTATION_UPDATES.md
+ADDITIONAL_IMPROVEMENTS.md
 
