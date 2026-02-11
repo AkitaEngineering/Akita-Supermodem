@@ -23,13 +23,13 @@ from .common import (
     MAX_FILE_SIZE,
     sanitize_filename,
     calculate_hash,
-    calculate_merkle_root
+    calculate_merkle_root,
 )
 
 # You might also want to expose the generated protobuf message types if needed directly
 # from .generated import akita_pb2
 
-__version__ = "0.1.0" # Keep in sync with pyproject.toml
+__version__ = "0.1.0"  # Keep in sync with pyproject.toml
 
 __all__ = [
     "AkitaSender",
@@ -51,4 +51,3 @@ __all__ = [
 ]
 
 print(f"Akita Supermodem Package Initialized (Version: {__version__})")
-

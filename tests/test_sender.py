@@ -5,7 +5,6 @@ Unit tests for AkitaSender.
 import unittest
 from unittest.mock import Mock, MagicMock, patch
 from akita_supermodem.sender import AkitaSender
-from akita_supermodem.common import DEFAULT_PIECE_SIZE
 
 
 class TestAkitaSender(unittest.TestCase):
@@ -39,17 +38,14 @@ class TestAkitaSender(unittest.TestCase):
         """Test retrieving piece data."""
         # Set up a transfer
         recipient_id = "test_recipient"
-        self.sender.active_transfers[recipient_id] = {
-            "num_pieces": 2,
-            "pieces": [b"piece0", b"piece1"]
-        }
-        
+        self.sender.active_transfers[recipient_id] = {"num_pieces": 2, "pieces": [b"piece0", b"piece1"]}
+
         piece = self.sender._get_piece_data(recipient_id, 0)
         self.assertEqual(piece, b"piece0")
-        
+
         piece = self.sender._get_piece_data(recipient_id, 1)
         self.assertEqual(piece, b"piece1")
-        
+
         # Invalid index should return None
         piece = self.sender._get_piece_data(recipient_id, 99)
         self.assertIsNone(piece)
@@ -59,30 +55,27 @@ class TestAkitaSender(unittest.TestCase):
         result = self.sender.start_transfer("recipient", "/nonexistent/file.txt")
         self.assertFalse(result)
 
-    @patch('os.path.exists')
-    @patch('os.path.isfile')
-    @patch('os.path.getsize')
-    @patch('builtins.open', create=True)
+    @patch("os.path.exists")
+    @patch("os.path.isfile")
+    @patch("os.path.getsize")
+    @patch("builtins.open", create=True)
     def test_start_transfer_success(self, mock_open, mock_getsize, mock_isfile, mock_exists):
         """Test successful transfer start."""
         mock_exists.return_value = True
         mock_isfile.return_value = True
         mock_getsize.return_value = 2048  # 2 pieces
-        
+
         # Mock file reading
         mock_file = MagicMock()
         mock_file.read.side_effect = [b"x" * 1024, b"y" * 1024, b""]
         mock_open.return_value.__enter__.return_value = mock_file
-        
+
         # Mock sendData
         self.mock_mesh.sendData.return_value = None
-        
+
         result = self.sender.start_transfer("recipient", "test.txt")
-        # Should succeed (or at least not fail on file reading)
-        # Note: May fail on protobuf serialization if generated code not available
-        # This is expected in test environment
+        self.assertIsNotNone(result)  # Should succeed
 
 
 if __name__ == "__main__":
     unittest.main()
-

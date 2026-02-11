@@ -5,7 +5,6 @@ Contains the AkitaSender class for initiating and managing file transfers.
 """
 
 import time
-import hashlib
 import os
 import logging
 import threading
@@ -21,8 +20,9 @@ from .common import (
     DEFAULT_PIECE_SIZE,
     calculate_merkle_root,
     DEFAULT_INITIAL_DELAY,
-    DEFAULT_MAX_DELAY
+    DEFAULT_MAX_DELAY,
 )
+
 # Import generated protobuf code using relative path
 # Ensure akita_pb2.py is generated in the 'generated' subdirectory
 try:
@@ -33,32 +33,37 @@ except ImportError:
     raise
 
 # Assume meshtastic library is installed
-try:
-    import meshtastic
-    import meshtastic.serial_interface
+try:  # noqa: E402
+    import meshtastic  # noqa: E402
+    import meshtastic.serial_interface  # noqa: E402
+
     # Define MeshInterface type hint for clarity if meshtastic is available
-    MeshInterface = meshtastic.serial_interface.SerialInterface # Or other interface types
+    MeshInterface = meshtastic.serial_interface.SerialInterface  # Or other interface types
 except ImportError:
     logger.warning("meshtastic library not found. AkitaSender will not be able to send data.")
+
     # Define a placeholder type if meshtastic is not installed
     class MeshInterface:
         def sendData(self, *args, **kwargs):
             logger.error("meshtastic library not installed. Cannot send data.")
-            pass # No-op sendData
+            pass  # No-op sendData
 
 
 class AkitaSender:
     """
     Manages the sending side of an Akita Supermodem file transfer over Meshtastic.
     """
-    def __init__(self,
-                 mesh_api: MeshInterface,
-                 piece_size: int = DEFAULT_PIECE_SIZE,
-                 use_merkle_root: bool = True,
-                 initial_delay: float = DEFAULT_INITIAL_DELAY,
-                 min_delay: float = 0.05,
-                 max_delay: float = DEFAULT_MAX_DELAY,
-                 retry_threshold: int = 3):
+
+    def __init__(
+        self,
+        mesh_api: MeshInterface,
+        piece_size: int = DEFAULT_PIECE_SIZE,
+        use_merkle_root: bool = True,
+        initial_delay: float = DEFAULT_INITIAL_DELAY,
+        min_delay: float = 0.05,
+        max_delay: float = DEFAULT_MAX_DELAY,
+        retry_threshold: int = 3,
+    ):
         """
         Initializes the AkitaSender.
 
@@ -74,7 +79,7 @@ class AkitaSender:
                              increasing the send delay.
         """
         if mesh_api is None:
-             raise ValueError("mesh_api cannot be None. Provide a valid Meshtastic interface.")
+            raise ValueError("mesh_api cannot be None. Provide a valid Meshtastic interface.")
         self.mesh = mesh_api
         self.piece_size = piece_size
         self.use_merkle_root = use_merkle_root
@@ -109,8 +114,8 @@ class AkitaSender:
             logger.error(f"File not found: {filepath}")
             return False
         if not os.path.isfile(filepath):
-             logger.error(f"Path is not a file: {filepath}")
-             return False
+            logger.error(f"Path is not a file: {filepath}")
+            return False
 
         # Get file size first for memory-efficient processing
         try:
@@ -120,13 +125,16 @@ class AkitaSender:
             return False
 
         if total_size == 0:
-             logger.warning(f"File is empty: {filepath}. Sending FileStart but no pieces.")
-             # Allow sending empty files if desired, handle num_pieces=0 case
+            logger.warning(f"File is empty: {filepath}. Sending FileStart but no pieces.")
+            # Allow sending empty files if desired, handle num_pieces=0 case
 
         # Calculate number of pieces carefully, handling zero size
         num_pieces = (total_size + self.piece_size - 1) // self.piece_size if total_size > 0 else 0
 
-        logger.info(f"Preparing transfer '{os.path.basename(filepath)}' ({total_size} bytes, {num_pieces} pieces) to {recipient_id}")
+        logger.info(
+            f"Preparing transfer '{os.path.basename(filepath)}' "
+            f"({total_size} bytes, {num_pieces} pieces) to {recipient_id}"
+        )
 
         # Memory-efficient: Read file in chunks and calculate hashes
         piece_hashes: List[str] = []
@@ -159,18 +167,17 @@ class AkitaSender:
                 file_start_proto.merkle_root = merkle_root
                 logger.debug(f"Calculated Merkle Root: {merkle_root[:10]}...")
             else:
-                 logger.warning("Could not calculate Merkle root, sending individual hashes.")
-                 file_start_proto.piece_hashes.extend(piece_hashes)
+                logger.warning("Could not calculate Merkle root, sending individual hashes.")
+                file_start_proto.piece_hashes.extend(piece_hashes)
         elif num_pieces > 0:
-             logger.debug("Sending individual piece hashes.")
-             file_start_proto.piece_hashes.extend(piece_hashes)
+            logger.debug("Sending individual piece hashes.")
+            file_start_proto.piece_hashes.extend(piece_hashes)
         else:
-             logger.debug("No pieces to hash (empty file).")
-
+            logger.debug("No pieces to hash (empty file).")
 
         # --- Wrap in AkitaMessage and Send ---
         akita_message = akita_pb2.AkitaMessage()
-        akita_message.file_start.CopyFrom(file_start_proto) # Use CopyFrom for nested messages
+        akita_message.file_start.CopyFrom(file_start_proto)  # Use CopyFrom for nested messages
         payload = akita_message.SerializeToString()
 
         logger.info(f"Sending FILE_START to {recipient_id}...")
@@ -185,9 +192,8 @@ class AkitaSender:
                 # wantAck=False (default) might be better for throughput.
             )
         except Exception as e:
-             logger.error(f"Error sending FILE_START via Meshtastic: {e}")
-             return False
-
+            logger.error(f"Error sending FILE_START via Meshtastic: {e}")
+            return False
 
         # --- Store Transfer State (with thread safety) ---
         with self._lock:
@@ -198,11 +204,11 @@ class AkitaSender:
                 "num_pieces": num_pieces,
                 "piece_size": self.piece_size,
                 "pieces": pieces,
-                "piece_hashes": piece_hashes, # Store hashes for potential resends
+                "piece_hashes": piece_hashes,  # Store hashes for potential resends
                 "merkle_root": merkle_root,
-                "sent_pieces": [False] * num_pieces, # Track initial send attempt
-                "acknowledged_pieces": [False] * num_pieces, # Track confirmed ACKs
-                "send_failures": [0] * num_pieces, # Track send failure count per piece
+                "sent_pieces": [False] * num_pieces,  # Track initial send attempt
+                "acknowledged_pieces": [False] * num_pieces,  # Track confirmed ACKs
+                "send_failures": [0] * num_pieces,  # Track send failure count per piece
                 "transfer_complete": False,
             }
             self.send_delays[recipient_id] = self.initial_delay
@@ -210,17 +216,15 @@ class AkitaSender:
 
         # --- Start Sending Pieces ---
         if num_pieces > 0:
-            self._send_pieces(recipient_id, list(range(num_pieces))) # Send all initially
+            self._send_pieces(recipient_id, list(range(num_pieces)))  # Send all initially
         else:
             logger.info("File is empty, no pieces to send.")
             # Mark transfer as potentially complete if empty
             with self._lock:
                 if recipient_id in self.active_transfers:
-                     self.active_transfers[recipient_id]["transfer_complete"] = True
-
+                    self.active_transfers[recipient_id]["transfer_complete"] = True
 
         return True
-
 
     def _calculate_merkle_root(self, hashes: List[str]) -> Optional[str]:
         """Calculates the Merkle root for a list of hex-encoded hashes."""
@@ -234,8 +238,11 @@ class AkitaSender:
                 try:
                     return transfer["pieces"][index]
                 except IndexError:
-                     logger.error(f"Index {index} out of range for pieces list (len: {len(transfer.get('pieces', []))}) for {recipient_id}.")
-                     return None
+                    logger.error(
+                        f"Index {index} out of range for pieces list "
+                        f"(len: {len(transfer.get('pieces', []))}) for {recipient_id}."
+                    )
+                    return None
         return None
 
     def _send_pieces(self, recipient_id: str, indices_to_send: List[int]):
@@ -267,11 +274,7 @@ class AkitaSender:
 
                 logger.debug(f"Sending PIECE_DATA {i}/{num_pieces_total-1} ({len(payload)} bytes)...")
                 try:
-                    self.mesh.sendData(
-                        destinationId=recipient_id,
-                        payload=payload,
-                        portNum=AKITA_CONTENT_TYPE
-                    )
+                    self.mesh.sendData(destinationId=recipient_id, payload=payload, portNum=AKITA_CONTENT_TYPE)
                     # Mark as *attempted* send and reset failure count on success
                     with self._lock:
                         transfer = self.active_transfers.get(recipient_id)
@@ -281,17 +284,20 @@ class AkitaSender:
                             if i < len(transfer.get("send_failures", [])):
                                 transfer["send_failures"][i] = 0  # Reset failure count on successful send
                 except Exception as e:
-                     logger.error(f"Error sending PIECE_DATA {i} via Meshtastic: {e}")
-                     # Track send failures
-                     with self._lock:
-                         transfer = self.active_transfers.get(recipient_id)
-                         if transfer and "send_failures" in transfer:
-                             if i < len(transfer["send_failures"]):
-                                 transfer["send_failures"][i] = transfer["send_failures"][i] + 1
-                                 # Mark transfer as failed if too many consecutive failures
-                                 if transfer["send_failures"][i] >= 5:
-                                     logger.error(f"Too many send failures ({transfer['send_failures'][i]}) for piece {i}, marking transfer as failed")
-                                     transfer["transfer_complete"] = True  # Or add a "failed" flag
+                    logger.error(f"Error sending PIECE_DATA {i} via Meshtastic: {e}")
+                    # Track send failures
+                    with self._lock:
+                        transfer = self.active_transfers.get(recipient_id)
+                        if transfer and "send_failures" in transfer:
+                            if i < len(transfer["send_failures"]):
+                                transfer["send_failures"][i] = transfer["send_failures"][i] + 1
+                                # Mark transfer as failed if too many consecutive failures
+                                if transfer["send_failures"][i] >= 5:
+                                    logger.error(
+                                        f"Too many send failures ({transfer['send_failures'][i]}) for piece {i}, "
+                                        f"marking transfer as failed"
+                                    )
+                                    transfer["transfer_complete"] = True  # Or add a "failed" flag
 
                 # Apply delay *after* sending each piece
                 time.sleep(current_delay)
@@ -299,7 +305,6 @@ class AkitaSender:
                 logger.error(f"Could not retrieve data for piece {i} for recipient {recipient_id}.")
 
         logger.debug(f"Finished sending batch of pieces to {recipient_id}.")
-
 
     def handle_resume_request(self, sender_id: str, resume_request_proto: akita_pb2.ResumeRequest):
         """Handles a ResumeRequest from a receiver."""
@@ -309,15 +314,18 @@ class AkitaSender:
                 logger.warning(f"Received RESUME_REQUEST from {sender_id} but no active transfer found for them.")
                 return
             if transfer.get("transfer_complete", False):
-                 logger.debug(f"Received RESUME_REQUEST from {sender_id} for an already completed transfer.")
-                 return
+                logger.debug(f"Received RESUME_REQUEST from {sender_id} for an already completed transfer.")
+                return
 
             # Convert to set for uniqueness, then sorted list
             missing_indices = sorted(set(resume_request_proto.missing_indices))
             acknowledged_indices = resume_request_proto.acknowledged_indices
             num_pieces_total = transfer.get("num_pieces", 0)
 
-        logger.info(f"Received RESUME_REQUEST from {sender_id}: ACKed {len(acknowledged_indices)}, Missing {len(missing_indices)}")
+        logger.info(
+            f"Received RESUME_REQUEST from {sender_id}: ACKed {len(acknowledged_indices)}, "
+            f"Missing {len(missing_indices)}"
+        )
         logger.debug(f"  ACKed Indices: {list(acknowledged_indices)}")
         logger.debug(f"  Missing Indices: {missing_indices}")
 
@@ -329,16 +337,16 @@ class AkitaSender:
             all_acked = True
             acked_count = 0
             if "acknowledged_pieces" not in transfer or len(transfer["acknowledged_pieces"]) != num_pieces_total:
-                 transfer["acknowledged_pieces"] = [False] * num_pieces_total # Initialize if needed
+                transfer["acknowledged_pieces"] = [False] * num_pieces_total  # Initialize if needed
 
             for index in range(num_pieces_total):
                 if index in acknowledged_indices:
                     if not transfer["acknowledged_pieces"][index]:
                         transfer["acknowledged_pieces"][index] = True
-                    acked_count += 1 # Count ACKs received in this message
+                    acked_count += 1  # Count ACKs received in this message
                 # Check overall completion status based on stored ACK state
                 if not transfer["acknowledged_pieces"][index]:
-                    all_acked = False # Still waiting for some pieces
+                    all_acked = False  # Still waiting for some pieces
 
             logger.debug(f"Total acknowledged (cumulative): {sum(transfer['acknowledged_pieces'])}/{num_pieces_total}")
 
@@ -347,7 +355,7 @@ class AkitaSender:
                 if not transfer.get("transfer_complete", False):
                     logger.info(f"Transfer to {sender_id} successfully acknowledged as complete.")
                     transfer["transfer_complete"] = True
-                return # Nothing more to do
+                return  # Nothing more to do
 
             # --- Adjust Rate Control based on Missing Pieces ---
             if missing_indices:
@@ -358,7 +366,9 @@ class AkitaSender:
                     new_delay = min(current_delay * 1.5, self.max_delay)
                     if new_delay > current_delay:
                         self.send_delays[sender_id] = new_delay
-                        logger.info(f"[Rate Control] High retry count from {sender_id}. Increasing delay to {new_delay:.3f}s")
+                        logger.info(
+                            f"[Rate Control] High retry count from {sender_id}. Increasing delay to {new_delay:.3f}s"
+                        )
                     # Reset counter after adjusting delay
                     self.retry_counts[sender_id] = 0
             else:
@@ -371,12 +381,14 @@ class AkitaSender:
             # Filter out invalid indices just in case
             valid_missing_indices = [idx for idx in missing_indices if 0 <= idx < num_pieces_total]
             if len(valid_missing_indices) != len(missing_indices):
-                 logger.warning(f"ResumeRequest contained invalid indices: {set(missing_indices) - set(valid_missing_indices)}")
+                logger.warning(
+                    f"ResumeRequest contained invalid indices: {set(missing_indices) - set(valid_missing_indices)}"
+                )
 
             if valid_missing_indices:
-                 self._send_pieces(sender_id, valid_missing_indices)
+                self._send_pieces(sender_id, valid_missing_indices)
             else:
-                 logger.warning("No valid missing pieces to resend.")
+                logger.warning("No valid missing pieces to resend.")
         else:
             logger.debug("No missing pieces reported in this ResumeRequest.")
 
@@ -384,7 +396,7 @@ class AkitaSender:
         """Removes state for a completed or failed transfer."""
         with self._lock:
             if recipient_id in self.active_transfers:
-                filename = self.active_transfers[recipient_id].get('filename', 'unknown file')
+                filename = self.active_transfers[recipient_id].get("filename", "unknown file")
                 logger.info(f"Cleaning up transfer state for recipient {recipient_id} (File: {filename})")
                 del self.active_transfers[recipient_id]
             if recipient_id in self.send_delays:

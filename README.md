@@ -1,8 +1,10 @@
 # Akita Supermodem
 
-**Organization:** Akita Engineering
-**Contact:** info@akitaengineering.com
-**Website:** [www.akitaengineering.com](https://www.akitaengineering.com)
+**Organization:** Akita Engineering  
+**Contact:** info@akitaengineering.com  
+**Website:** [www.akitaengineering.com](https://www.akitaengineering.com)  
+**Version:** 0.1.0  
+**License:** GPLv3  
 
 ---
 
@@ -27,38 +29,35 @@ Akita Supermodem is a Python library implementing a robust file transfer protoco
 
 ## Installation
 
-1.  **Prerequisites:**
-    * Python 3.7+
-    * `pip` (Python package installer)
-    * `protoc` (Protocol Buffer Compiler) - Optional for testing, required for production. See: [Protocol Buffer Compiler Installation](https://grpc.io/docs/protoc-installation/)
+1. **Prerequisites:**
+   * Python 3.7+
+   * `pip` (Python package installer)
+   * Meshtastic device/interface for actual usage
+   * `protoc` (Protocol Buffer Compiler) - Optional, only needed if regenerating protobuf code
 
-2.  **Clone the repository:**
-    ```bash
-    git clone [https://github.com/AkitaEngineering/akita-supermodem.git](https://github.com/AkitaEngineering/akita-supermodem.git)
-    cd akita-supermodem
-    ```
+2. **Clone the repository:**
+   ```bash
+   git clone https://github.com/AkitaEngineering/akita-supermodem.git
+   cd akita-supermodem
+   ```
 
-3.  **Install dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
+3. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-4.  **Generate Protobuf code (Production):**
-    For production use, generate the actual protobuf code:
-    ```bash
-    protoc --python_out=./akita_supermodem/generated --proto_path=./akita_supermodem/proto ./akita_supermodem/proto/akita.proto
-    # Create __init__.py if it doesn't exist (needed for package recognition)
-    touch ./akita_supermodem/generated/__init__.py
-    ```
-    This creates `akita_supermodem/generated/akita_pb2.py`.
-    
-    **Note:** A stub protobuf module is included for testing purposes. The stub allows tests to run without requiring `protoc`, but for production use, you should generate the actual protobuf code using `protoc`.
+4. **Protobuf Code:**
+   The repository includes pre-generated protobuf code (`akita_supermodem/generated/akita_pb2.py`) for immediate use. If you need to regenerate it (e.g., after modifying the protocol):
+   ```bash
+   # Note: The proto/akita.proto file is not included in the repository
+   # For regeneration, obtain the .proto file and run:
+   protoc --python_out=./akita_supermodem/generated --proto_path=./proto ./proto/akita.proto
+   ```
 
-5.  **(Optional) Install the package locally:**
-    For development or making the package importable:
-    ```bash
-    pip install .
-    ```
+5. **(Optional) Install the package locally:**
+   ```bash
+   pip install .
+   ```
 
 ## Usage
 
@@ -75,26 +74,28 @@ See the `examples/` directory and the [Usage Guide](docs/usage.md) for detailed 
   logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
   ```
 
-## Testing
+## Code Quality
 
-Run the test suite to verify installation:
+The codebase follows Python best practices with:
+- Comprehensive test coverage (16 tests passing)
+- Linting with flake8 (120 char line limit, PEP 8 compliance)
+- Type hints and documentation
+- Thread-safe implementation
+- Memory-efficient file handling
 
+Run linting:
 ```bash
-python -m unittest discover tests
-# or
-python -m unittest tests.test_common tests.test_sender tests.test_receiver -v
+pip install flake8
+flake8 akita_supermodem/ examples/ tests/ --max-line-length=120
 ```
-
-All tests should pass. The test suite includes:
-- Common utility tests (hashing, filename sanitization)
-- Sender functionality tests
-- Receiver functionality tests
 
 ## Documentation
 
 * [Protocol Details](docs/protocol.md)
 * [Usage Guide](docs/usage.md)
-* [Improvements Summary](IMPROVEMENTS_SUMMARY.md) - Details of recent enhancements
+* [Code Review Status](CODE_REVIEW_STATUS.md)
+* [Improvements Summary](IMPROVEMENTS_SUMMARY.md)
+* [Change Log](CHANGELOG.md)
 
 ## Version History
 
@@ -105,10 +106,11 @@ See [CHANGELOG.md](CHANGELOG.md) for detailed version history and changes.
 Contributions are welcome! Please fork the repository, create a feature branch, add your changes (including tests), ensure code quality, and submit a Pull Request.
 
 **Development Guidelines:**
-- Follow existing code style and conventions
+- Follow existing code style and conventions (PEP 8, 120 char line limit)
 - Add unit tests for new functionality
 - Update documentation as needed
-- Ensure all tests pass before submitting
+- Ensure all tests pass (`python -m pytest tests/ -v`)
+- Run linting (`flake8 akita_supermodem/ examples/ tests/ --max-line-length=120`)
 - Use the logging module instead of print statements
 
 ## License

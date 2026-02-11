@@ -3,9 +3,8 @@ Unit tests for AkitaReceiver.
 """
 
 import unittest
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 from akita_supermodem.receiver import AkitaReceiver
-from akita_supermodem.common import DEFAULT_TIMEOUT, DEFAULT_MAX_RETRIES
 
 
 class TestAkitaReceiver(unittest.TestCase):
@@ -15,10 +14,7 @@ class TestAkitaReceiver(unittest.TestCase):
         """Set up test fixtures."""
         self.mock_save = Mock()
         self.mock_send = Mock()
-        self.receiver = AkitaReceiver(
-            save_function=self.mock_save,
-            send_function=self.mock_send
-        )
+        self.receiver = AkitaReceiver(save_function=self.mock_save, send_function=self.mock_send)
 
     def test_init(self):
         """Test receiver initialization."""
@@ -31,7 +27,7 @@ class TestAkitaReceiver(unittest.TestCase):
         # Direct message
         transfer_id = self.receiver._get_transfer_id("sender123", False)
         self.assertEqual(transfer_id, "sender123")
-        
+
         # Broadcast
         transfer_id = self.receiver._get_transfer_id("sender123", True)
         self.assertEqual(transfer_id, "broadcast_sender123")
@@ -39,11 +35,7 @@ class TestAkitaReceiver(unittest.TestCase):
     def test_calculate_merkle_root(self):
         """Test Merkle root calculation."""
         num_pieces = 3
-        received_hashes = {
-            0: "a" * 64,
-            1: "b" * 64,
-            2: "c" * 64
-        }
+        received_hashes = {0: "a" * 64, 1: "b" * 64, 2: "c" * 64}
         root = self.receiver._calculate_merkle_root(num_pieces, received_hashes)
         self.assertIsNotNone(root)
         self.assertIsInstance(root, str)
@@ -66,9 +58,9 @@ class TestAkitaReceiver(unittest.TestCase):
             "received_pieces": {0: b"data", 2: b"data"},  # Missing 1, 3, 4
             "retry_count": {},
             "failed": False,
-            "transfer_complete": False
+            "transfer_complete": False,
         }
-        
+
         missing = self.receiver._check_for_missing_or_corrupt(transfer_id)
         self.assertEqual(len(missing), 3)  # Should find 3 missing pieces
         self.assertIn(1, missing)
@@ -78,4 +70,3 @@ class TestAkitaReceiver(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
