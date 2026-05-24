@@ -1,8 +1,12 @@
 # Core dependencies for Akita Supermodem
 protobuf>=3.19.0,<5.0.0 # Check compatibility with your protoc version
 meshtastic>=2.0.0 # Specify the version you are targeting
+cryptography>=41.0.0 # For End-to-End Encryption (E2EE)
 
 # Optional dependencies for development/testing
+fastapi>=0.100.0 # For Web UI backend
+uvicorn>=0.23.0 # For serving FastAPI
+click>=8.1.0 # For CLI
 # pytest
 # black
 # flake8

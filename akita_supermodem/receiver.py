@@ -73,7 +73,9 @@ class AkitaReceiver:
 
         self.save = save_function
         self.send = send_function
-        self.initial_timeout = initial_timeout  # Stored but not used for per-piece timeouts currently
+        self.initial_timeout = (
+            initial_timeout  # Stored but not used for per-piece timeouts currently
+        )
         self.max_retries = max_retries
         self.request_interval = request_interval
 
@@ -88,7 +90,9 @@ class AkitaReceiver:
         # Thread lock for thread-safe access to shared state
         self._lock = threading.Lock()
 
-        logger.info(f"AkitaReceiver initialized. Max Retries: {max_retries}, Request Interval: {request_interval}s")
+        logger.info(
+            f"AkitaReceiver initialized. Max Retries: {max_retries}, Request Interval: {request_interval}s"
+        )
 
     def _get_transfer_id(self, sender_id: str, is_broadcast: bool) -> str:
         """Generates a unique ID for the transfer."""
@@ -97,25 +101,38 @@ class AkitaReceiver:
         # or multiple simultaneous broadcasts from one sender are concerns.
         return f"broadcast_{sender_id}" if is_broadcast else sender_id
 
-    def handle_file_start(self, sender_id: str, file_start: akita_pb2.FileStart, is_broadcast: bool = False):
+    def handle_file_start(
+        self,
+        sender_id: str,
+        file_start: akita_pb2.FileStart,
+        is_broadcast: bool = False,
+    ):
         """Handles an incoming FileStart message."""
         transfer_id = self._get_transfer_id(sender_id, is_broadcast)
 
         with self._lock:
             if transfer_id in self.active_transfers:
                 # Handle potential duplicate FileStart for an ongoing transfer
-                logger.warning(f"Received duplicate FILE_START for transfer_id {transfer_id}. Re-initializing state.")
-                self.cleanup_transfer(transfer_id)  # Clean up old state before re-initializing
+                logger.warning(
+                    f"Received duplicate FILE_START for transfer_id {transfer_id}. Re-initializing state."
+                )
+                self.cleanup_transfer(
+                    transfer_id
+                )  # Clean up old state before re-initializing
 
         filename = file_start.filename
         total_size = file_start.total_size
         piece_size = file_start.piece_size
-        merkle_root = file_start.merkle_root if file_start.HasField("merkle_root") else None
+        merkle_root = (
+            file_start.merkle_root if file_start.HasField("merkle_root") else None
+        )
         piece_hashes = list(file_start.piece_hashes)
 
         # Comprehensive protocol validation
         if piece_size == 0 and total_size > 0:
-            logger.error(f"Received FILE_START with piece_size=0 but total_size>0 from {sender_id}. Aborting transfer.")
+            logger.error(
+                f"Received FILE_START with piece_size=0 but total_size>0 from {sender_id}. Aborting transfer."
+            )
             return
         elif piece_size == 0 and total_size == 0:
             num_pieces = 0  # Handle empty file case
@@ -166,8 +183,12 @@ class AkitaReceiver:
                 f"{num_pieces} from {sender_id}. This may indicate a protocol mismatch."
             )
 
-        logger.info(f"Received FILE_START from {sender_id} {'(Broadcast)' if is_broadcast else ''}")
-        logger.info(f"File: '{filename}', Size: {total_size}, Pieces: {num_pieces}, Piece Size: {piece_size}")
+        logger.info(
+            f"Received FILE_START from {sender_id} {'(Broadcast)' if is_broadcast else ''}"
+        )
+        logger.info(
+            f"File: '{filename}', Size: {total_size}, Pieces: {num_pieces}, Piece Size: {piece_size}"
+        )
         if merkle_root:
             logger.debug(f"Merkle Root: {merkle_root[:10]}...")
         elif piece_hashes:
@@ -181,7 +202,9 @@ class AkitaReceiver:
         else:
             # Only warn if the file is not empty
             if total_size > 0:
-                logger.warning("No Merkle root or piece hashes provided for non-empty file.")
+                logger.warning(
+                    "No Merkle root or piece hashes provided for non-empty file."
+                )
 
         # Initialize transfer state (with thread safety)
         with self._lock:
@@ -194,7 +217,9 @@ class AkitaReceiver:
                 "num_pieces": num_pieces,
                 "received_pieces": {},  # Stores piece_index -> piece_data
                 "received_hashes": {},  # Stores piece_index -> calculated_hash
-                "missing_indices": set(range(num_pieces)),  # Initially, all pieces are missing
+                "missing_indices": set(
+                    range(num_pieces)
+                ),  # Initially, all pieces are missing
                 "requested_indices": set(),  # Pieces currently requested in a ResumeRequest
                 "retry_count": {},  # piece_index -> number of times requested
                 "is_broadcast": is_broadcast,
@@ -204,7 +229,9 @@ class AkitaReceiver:
                 "transfer_complete": False,
                 "failed": False,
             }
-            self.last_request_time[transfer_id] = 0  # Allow immediate first request if needed
+            self.last_request_time[transfer_id] = (
+                0  # Allow immediate first request if needed
+            )
 
         if num_pieces == 0 and total_size == 0:
             logger.info(f"Received empty file '{filename}'. Assembling immediately.")
@@ -215,18 +242,27 @@ class AkitaReceiver:
             # Don't send ResumeRequest immediately on FileStart. Wait for pieces or timeout.
             logger.debug("Waiting for pieces...")
 
-    def handle_piece_data(self, sender_id: str, piece_data: akita_pb2.PieceData, is_broadcast: bool = False):
+    def handle_piece_data(
+        self,
+        sender_id: str,
+        piece_data: akita_pb2.PieceData,
+        is_broadcast: bool = False,
+    ):
         """Handles an incoming PieceData message."""
         transfer_id = self._get_transfer_id(sender_id, is_broadcast)
 
         with self._lock:
             if transfer_id not in self.active_transfers:
                 # Received a piece for a transfer we don't know about.
-                logger.warning(f"Received PIECE_DATA for unknown transfer_id {transfer_id} from {sender_id}. Ignoring.")
+                logger.warning(
+                    f"Received PIECE_DATA for unknown transfer_id {transfer_id} from {sender_id}. Ignoring."
+                )
                 return
 
             transfer = self.active_transfers[transfer_id]
-            if transfer.get("transfer_complete", False) or transfer.get("failed", False):
+            if transfer.get("transfer_complete", False) or transfer.get(
+                "failed", False
+            ):
                 return
 
             index = piece_data.piece_index
@@ -266,9 +302,13 @@ class AkitaReceiver:
                 transfer["requested_indices"] = set()
 
             transfer["missing_indices"].discard(index)
-            transfer["requested_indices"].discard(index)  # No longer waiting for this specific request
+            transfer["requested_indices"].discard(
+                index
+            )  # No longer waiting for this specific request
             if index in transfer.get("retry_count", {}):
-                del transfer["retry_count"][index]  # Reset retry count on successful receipt
+                del transfer["retry_count"][
+                    index
+                ]  # Reset retry count on successful receipt
 
         # --- Check if Complete ---
         # Check completion immediately after receiving a piece
@@ -287,7 +327,9 @@ class AkitaReceiver:
                 return set()
 
             transfer = self.active_transfers[transfer_id]
-            if transfer.get("transfer_complete", False) or transfer.get("failed", False):
+            if transfer.get("transfer_complete", False) or transfer.get(
+                "failed", False
+            ):
                 return set()
 
             num_pieces_total = transfer.get("num_pieces", 0)
@@ -324,7 +366,9 @@ class AkitaReceiver:
                     needs_request.discard(index)  # Give up requesting this piece
 
             if transfer.get("failed", False):
-                logger.error(f"Transfer {transfer_id} failed due to max retries reached for pieces: {failed_pieces}")
+                logger.error(
+                    f"Transfer {transfer_id} failed due to max retries reached for pieces: {failed_pieces}"
+                )
                 # Release lock before cleanup to avoid deadlock
                 self.cleanup_transfer(transfer_id)  # Clean up immediately on failure
                 return set()  # Don't request anything if failed
@@ -351,7 +395,9 @@ class AkitaReceiver:
 
             sender_id = transfer.get("source_node")
             if not sender_id:
-                logger.error(f"Cannot send ResumeRequest for {transfer_id}, source_node unknown.")
+                logger.error(
+                    f"Cannot send ResumeRequest for {transfer_id}, source_node unknown."
+                )
                 return
 
             # Convert set to sorted list only when needed for protobuf
@@ -360,9 +406,13 @@ class AkitaReceiver:
             # Acknowledge all pieces successfully received *and* hash-verified so far
             # For simplicity and robustness, let's ACK all currently held pieces.
             # The sender can re-verify if needed.
-            acknowledged_indices = sorted(list(transfer.get("received_pieces", {}).keys()))
+            acknowledged_indices = sorted(
+                list(transfer.get("received_pieces", {}).keys())
+            )
 
-        logger.info(f"Sending RESUME_REQUEST to {sender_id} for transfer '{transfer.get('filename', 'unknown')}'")
+        logger.info(
+            f"Sending RESUME_REQUEST to {sender_id} for transfer '{transfer.get('filename', 'unknown')}'"
+        )
         logger.debug(f"Requesting pieces: {missing_indices}")
 
         # --- Construct and Send ---
@@ -387,29 +437,41 @@ class AkitaReceiver:
                     for index in missing_indices:
                         transfer["requested_indices"].add(index)
                         # Increment retry count *when sending the request*
-                        transfer["retry_count"][index] = transfer["retry_count"].get(index, 0) + 1
+                        transfer["retry_count"][index] = (
+                            transfer["retry_count"].get(index, 0) + 1
+                        )
                     self.last_request_time[transfer_id] = current_time
 
         except Exception as e:
             logger.error(f"Error sending RESUME_REQUEST via callback: {e}")
 
-    def _calculate_merkle_root(self, num_pieces: int, received_hashes: Dict[int, str]) -> Optional[str]:
+    def _calculate_merkle_root(
+        self, num_pieces: int, received_hashes: Dict[int, str]
+    ) -> Optional[str]:
         """Calculates the Merkle root from the received pieces' hashes."""
         if num_pieces == 0:
             return calculate_hash(b"")
 
         # Ensure we have hashes for all pieces in the correct order
-        hashes_in_order: List[Optional[str]] = [received_hashes.get(i) for i in range(num_pieces)]
+        hashes_in_order: List[Optional[str]] = [
+            received_hashes.get(i) for i in range(num_pieces)
+        ]
 
         # If any hash is missing, cannot calculate the root reliably
         if None in hashes_in_order:
-            logger.warning("Cannot calculate Merkle root: Not all piece hashes are available.")
+            logger.warning(
+                "Cannot calculate Merkle root: Not all piece hashes are available."
+            )
             return None
 
         # Proceed with calculation if all hashes are present
-        valid_hashes: List[str] = [h for h in hashes_in_order if h is not None]  # Should be all now
+        valid_hashes: List[str] = [
+            h for h in hashes_in_order if h is not None
+        ]  # Should be all now
         if len(valid_hashes) != num_pieces:  # Sanity check
-            logger.warning("Cannot calculate Merkle root: Mismatch between valid hashes and num_pieces.")
+            logger.warning(
+                "Cannot calculate Merkle root: Mismatch between valid hashes and num_pieces."
+            )
             return None
 
         # Use shared Merkle root calculation function
@@ -429,7 +491,9 @@ class AkitaReceiver:
 
         # Ensure all pieces are present before assembling
         if len(received_pieces) != num_pieces:
-            logger.error(f"Cannot assemble '{filename}', expected {num_pieces} pieces, got {len(received_pieces)}.")
+            logger.error(
+                f"Cannot assemble '{filename}', expected {num_pieces} pieces, got {len(received_pieces)}."
+            )
             # This case should ideally be caught by _check_and_assemble before calling this
             transfer["failed"] = True
             self.cleanup_transfer(transfer_id)
@@ -443,7 +507,9 @@ class AkitaReceiver:
                 piece_data = received_pieces.get(i)
                 if piece_data is None:
                     # This should not happen if the check above passed
-                    raise ValueError(f"Assembly error: Missing piece data for index {i}")
+                    raise ValueError(
+                        f"Assembly error: Missing piece data for index {i}"
+                    )
                 full_data_list.append(piece_data)
                 current_size += len(piece_data)
 
@@ -475,7 +541,9 @@ class AkitaReceiver:
         finally:
             # Clean up the transfer state after completion or failure attempt
             # Cleanup happens within this function or if explicitly marked failed earlier
-            if transfer.get("transfer_complete", False) or transfer.get("failed", False):
+            if transfer.get("transfer_complete", False) or transfer.get(
+                "failed", False
+            ):
                 self.cleanup_transfer(transfer_id)
 
     def _check_and_assemble(self, transfer_id: str):
@@ -485,14 +553,18 @@ class AkitaReceiver:
         This function primarily focuses on the completion check after receiving a piece.
         """
         should_assemble = False
-        needs_resume_request = None  # Store missing indices if we need to send a request
+        needs_resume_request = (
+            None  # Store missing indices if we need to send a request
+        )
 
         with self._lock:
             if transfer_id not in self.active_transfers:
                 return
             transfer = self.active_transfers[transfer_id]
 
-            if transfer.get("transfer_complete", False) or transfer.get("failed", False):
+            if transfer.get("transfer_complete", False) or transfer.get(
+                "failed", False
+            ):
                 return
 
             num_pieces = transfer.get("num_pieces", 0)
@@ -510,7 +582,9 @@ class AkitaReceiver:
                 if transfer.get("merkle_root"):
                     # Verify using Merkle Root
                     expected_root = transfer["merkle_root"]
-                    calculated_root = self._calculate_merkle_root(num_pieces, transfer.get("received_hashes", {}))
+                    calculated_root = self._calculate_merkle_root(
+                        num_pieces, transfer.get("received_hashes", {})
+                    )
                     if calculated_root and calculated_root == expected_root:
                         logger.info("Merkle Root verification successful.")
                         verification_passed = True
@@ -551,7 +625,9 @@ class AkitaReceiver:
                         received_hash = received_hashes.get(i)
                         expected_hash = expected_hashes[i]
                         if received_hash is None:
-                            logger.warning(f"Missing received data/hash for piece {i} during verification.")
+                            logger.warning(
+                                f"Missing received data/hash for piece {i} during verification."
+                            )
                             all_hashes_match = False
                             mismatched_indices.add(i)
                         elif received_hash != expected_hash:
@@ -566,9 +642,13 @@ class AkitaReceiver:
                         logger.warning(
                             "Partial hash verification passed (hashes matched where available). Assuming OK."
                         )
-                        verification_passed = True  # Risky, but proceed if hashes matched where possible
+                        verification_passed = (
+                            True  # Risky, but proceed if hashes matched where possible
+                        )
                     else:
-                        logger.error(f"Individual hash verification failed for pieces: {mismatched_indices}.")
+                        logger.error(
+                            f"Individual hash verification failed for pieces: {mismatched_indices}."
+                        )
                         # Request only the mismatched/missing pieces
                         missing_set = mismatched_indices.copy()
                         # Clear bad piece data
@@ -584,7 +664,9 @@ class AkitaReceiver:
                         needs_resume_request = missing_set.copy()
                 else:
                     # No hashes or Merkle root provided
-                    if transfer.get("total_size", 0) > 0:  # Only warn if file expected content
+                    if (
+                        transfer.get("total_size", 0) > 0
+                    ):  # Only warn if file expected content
                         logger.warning(
                             "No integrity information provided. Assuming data is correct based on piece count."
                         )
@@ -606,7 +688,9 @@ class AkitaReceiver:
                 if transfer_id not in self.active_transfers:
                     return
                 transfer_ref = self.active_transfers[transfer_id]
-                if transfer_ref.get("transfer_complete", False) or transfer_ref.get("failed", False):
+                if transfer_ref.get("transfer_complete", False) or transfer_ref.get(
+                    "failed", False
+                ):
                     return
 
             # Now assemble outside the lock
@@ -624,7 +708,9 @@ class AkitaReceiver:
         """
         current_time = time.time()
         with self._lock:
-            all_transfer_ids = list(self.active_transfers.keys())  # Copy keys for safe iteration
+            all_transfer_ids = list(
+                self.active_transfers.keys()
+            )  # Copy keys for safe iteration
         inactivity_timeout = 300.0  # Example: 5 minutes of no activity
 
         for transfer_id in all_transfer_ids:
@@ -633,11 +719,15 @@ class AkitaReceiver:
                     continue  # Might have been cleaned up
                 transfer = self.active_transfers[transfer_id]
 
-            if transfer.get("transfer_complete", False) or transfer.get("failed", False):
+            if transfer.get("transfer_complete", False) or transfer.get(
+                "failed", False
+            ):
                 continue
 
             # Check overall transfer inactivity timeout
-            last_activity = transfer.get("last_activity_time", transfer.get("start_time", 0))
+            last_activity = transfer.get(
+                "last_activity_time", transfer.get("start_time", 0)
+            )
             if current_time - last_activity > inactivity_timeout:
                 logger.warning(
                     f"Transfer {transfer_id} ('{transfer.get('filename', 'unknown')}') timed out "
@@ -671,9 +761,15 @@ class AkitaReceiver:
                 status = (
                     "completed"
                     if self.active_transfers[transfer_id].get("transfer_complete")
-                    else "failed" if self.active_transfers[transfer_id].get("failed") else "aborted"
+                    else (
+                        "failed"
+                        if self.active_transfers[transfer_id].get("failed")
+                        else "aborted"
+                    )
                 )
-                filename = self.active_transfers[transfer_id].get("filename", "unknown file")
+                filename = self.active_transfers[transfer_id].get(
+                    "filename", "unknown file"
+                )
                 logger.info(
                     f"Cleaning up transfer state for transfer_id {transfer_id} (File: {filename}, Status: {status})"
                 )

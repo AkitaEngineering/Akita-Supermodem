@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Akita Supermodem</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo-area">
+                <div class="logo-icon"></div>
+                <h1>AKITA</h1>
+            </div>
+            <nav>
+                <a href="#" class="nav-item active" data-tab="dashboard">Dashboard</a>
+                <a href="#" class="nav-item" data-tab="transfers">Transfers</a>
+                <a href="#" class="nav-item" data-tab="settings">Settings</a>
+            </nav>
+            <div class="status-indicator">
+                <span class="dot pulse-red"></span>
+                <span class="status-text">Mesh Offline</span>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="top-bar">
+                <h2>Supermodem Next-Gen</h2>
+                <button class="btn primary" id="btn-new-transfer">New Transfer</button>
+            </header>
+
+            <div class="content-area">
+                <!-- Dashboard Tab -->
+                <section id="tab-dashboard" class="tab-content active">
+                    <div class="card-grid">
+                        <div class="card stat-card glass">
+                            <h3>Active Transfers</h3>
+                            <div class="stat-value">0</div>
+                        </div>
+                        <div class="card stat-card glass">
+                            <h3>Bytes Sent</h3>
+                            <div class="stat-value">0 B</div>
+                        </div>
+                        <div class="card stat-card glass">
+                            <h3>Bytes Received</h3>
+                            <div class="stat-value">0 B</div>
+                        </div>
+                    </div>
+
+                    <div class="card glass mt-6">
+                        <h3 class="card-title">Recent Activity</h3>
+                        <div class="empty-state">
+                            <p>No recent activity detected.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Settings Tab -->
+                <section id="tab-settings" class="tab-content">
+                    <div class="card glass">
+                        <h3 class="card-title">Application Settings</h3>
+                        <form id="settings-form">
+                            <div class="form-group">
+                                <label for="default_mesh_node">Default Mesh Node ID</label>
+                                <input type="text" id="default_mesh_node" name="default_mesh_node" placeholder="e.g. !ffffffff">
+                            </div>
+                            <div class="form-group">
+                                <label for="default_profile">Default Network Profile</label>
+                                <select id="default_profile" name="default_profile">
+                                    <option value="meshtastic">Meshtastic (High Range, Low BW)</option>
+                                    <option value="lora">Raw LoRa</option>
+                                    <option value="bluetooth">Bluetooth</option>
+                                    <option value="wifi">WiFi / LAN</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="ui_port">UI Server Port</label>
+                                <input type="number" id="ui_port" name="ui_port" placeholder="8080">
+                            </div>
+                            <button type="submit" class="btn primary">Save Settings</button>
+                        </form>
+                    </div>
+                </section>
+
+                <!-- Transfers Tab -->
+                <section id="tab-transfers" class="tab-content">
+                    <div class="card glass">
+                        <h3 class="card-title">Transfer Queue</h3>
+                        <div class="empty-state">
+                            <p>Queue is empty.</p>
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

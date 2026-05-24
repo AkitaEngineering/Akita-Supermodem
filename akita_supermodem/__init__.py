@@ -3,12 +3,11 @@
 # Make key classes and constants available when importing the package
 # Use try/except to allow importing common utilities even if protobuf code isn't generated
 try:
-    from .sender import AkitaSender
-    from .receiver import AkitaReceiver
-except ImportError:
-    # Protobuf code not generated yet - allow partial imports for testing
-    AkitaSender = None
-    AkitaReceiver = None
+    from .transfer_manager import TransferManager
+    from .crypto import CryptoManager
+except (ImportError, TypeError):
+    TransferManager = None
+    CryptoManager = None
 
 from .common import (
     AKITA_CONTENT_TYPE,
@@ -32,8 +31,8 @@ from .common import (
 __version__ = "0.1.0"  # Keep in sync with pyproject.toml
 
 __all__ = [
-    "AkitaSender",
-    "AkitaReceiver",
+    "TransferManager",
+    "CryptoManager",
     "AKITA_CONTENT_TYPE",
     "DEFAULT_PIECE_SIZE",
     "DEFAULT_TIMEOUT",
