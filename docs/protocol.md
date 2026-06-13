@@ -17,7 +17,7 @@ message FileStart {
   // The base name of the file being sent (e.g., "image.jpg").
   string filename = 1;
   // Total size of the file in bytes.
-  uint32 total_size = 2;
+  uint64 total_size = 2;
   // The size of each piece/chunk in bytes (except possibly the last one).
   // Must be > 0 if total_size > 0.
   uint32 piece_size = 3;
@@ -56,14 +56,28 @@ message Acknowledgement {
   uint32 piece_index = 1;
 }
 
+message KeyExchange {
+  bytes public_key = 1;
+  string session_id = 2;
+  ProtocolType protocol = 3;
+}
+
+message EncryptedPayload {
+  string session_id = 1;
+  bytes nonce = 2;
+  bytes ciphertext = 3;
+}
+
 // Wrapper message containing one of the specific Akita message types.
 // This allows sending different control/data messages over the same channel (PortNum).
 message AkitaMessage {
   oneof payload {
-    FileStart file_start = 1;
-    PieceData piece_data = 2;
-    ResumeRequest resume_request = 3;
-    Acknowledgement acknowledgement = 4;
+    KeyExchange key_exchange = 1;
+    EncryptedPayload encrypted_payload = 2;
+    FileStart file_start = 3;
+    PieceData piece_data = 4;
+    ResumeRequest resume_request = 5;
+    Acknowledgement acknowledgement = 6;
   }
 }
 ```
@@ -88,7 +102,7 @@ A wrapper message containing one of the specific payloads below. All Akita commu
 
 ## Acknowledgement
 - A simpler ACK for a single piece.
-- Defined but not currently used in the primary Python logic, as ACKs are bundled in `ResumeRequest`.
+- Supported by protocol handlers that need individual piece acknowledgement. The default sender also tracks completion through `ResumeRequest.acknowledged_indices`.
 
 ---
 

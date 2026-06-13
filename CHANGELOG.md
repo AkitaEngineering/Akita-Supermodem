@@ -11,10 +11,10 @@ All notable changes to Akita Supermodem will be documented in this file.
 - Error tracking for send failures with automatic failure detection
 - Professional logging system using Python's `logging` module
 - Filename sanitization function to prevent path traversal attacks
-- Protobuf stub module for testing without requiring protoc compiler
+- Checked-in generated protobuf module for runtime use without requiring protoc during installation
 
 ### Changed
-- Replaced all `print()` statements with proper logging calls
+- Replaced package-level stdout writes with proper logging calls
 - File reading now streams in chunks instead of loading entire file into memory
 - Improved error handling with better error messages and context
 - Enhanced thread safety throughout sender and receiver classes

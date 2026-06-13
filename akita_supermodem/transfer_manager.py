@@ -10,6 +10,8 @@ from .config import NetworkProfile, get_profile
 
 logger = logging.getLogger(__name__)
 
+SUPPORTED_PROTOCOLS = {akita_pb2.PROTOCOL_SUPERMODEM}
+
 
 class TransferManager:
     """
@@ -40,6 +42,9 @@ class TransferManager:
         protocol: int = akita_pb2.PROTOCOL_SUPERMODEM,
     ):
         """Initiates a file transfer. Starts with a KeyExchange."""
+        if protocol not in SUPPORTED_PROTOCOLS:
+            raise ValueError("Only the Supermodem protocol is production-supported in this release.")
+
         session_id = self._generate_session_id()
         crypto = CryptoManager(self.profile.encryption_enabled)
 
@@ -98,6 +103,9 @@ class TransferManager:
     def _handle_key_exchange(self, sender_id: str, kx: akita_pb2.KeyExchange):
         session_id = kx.session_id
         logger.info(f"Received Key Exchange from {sender_id} (Session {session_id})")
+        if kx.protocol not in SUPPORTED_PROTOCOLS:
+            logger.error(f"Rejecting unsupported protocol {kx.protocol} from {sender_id}.")
+            return
 
         with self._lock:
             crypto = self.sessions.get(session_id)
@@ -143,12 +151,7 @@ class TransferManager:
     def _instantiate_handler(
         self, session_id: str, peer_id: str, protocol: int
     ) -> object:
-        # Avoid circular imports by importing protocols here or deferring
         from .protocols.supermodem import SupermodemHandler
-        from .protocols.xmodem import XModemHandler
-        from .protocols.ymodem import YModemHandler
-        from .protocols.zmodem import ZModemHandler
-        from .protocols.kermit import KermitHandler
 
         crypto = self.sessions[session_id]
 
@@ -169,16 +172,8 @@ class TransferManager:
         handler = None
         if protocol == akita_pb2.PROTOCOL_SUPERMODEM:
             handler = SupermodemHandler(send_encrypted, self.save_function, profile=self.profile)
-        elif protocol == akita_pb2.PROTOCOL_XMODEM:
-            handler = XModemHandler(send_encrypted, self.save_function, profile=self.profile)
-        elif protocol == akita_pb2.PROTOCOL_YMODEM:
-            handler = YModemHandler(send_encrypted, self.save_function, profile=self.profile)
-        elif protocol == akita_pb2.PROTOCOL_ZMODEM:
-            handler = ZModemHandler(send_encrypted, self.save_function, profile=self.profile)
-        elif protocol == akita_pb2.PROTOCOL_KERMIT:
-            handler = KermitHandler(send_encrypted, self.save_function, profile=self.profile)
         else:
-            logger.error(f"Unknown protocol {protocol}")
+            logger.error(f"Unsupported protocol {protocol}")
 
         with self._lock:
             self.handlers[session_id] = handler

@@ -21,6 +21,9 @@ from .common import (
     calculate_merkle_root,
     DEFAULT_INITIAL_DELAY,
     DEFAULT_MAX_DELAY,
+    MAX_FILE_SIZE,
+    MAX_PIECE_SIZE,
+    MIN_PIECE_SIZE,
 )
 
 # Import generated protobuf code using relative path
@@ -32,25 +35,9 @@ except ImportError:
     logger.error("Please run the protoc command specified in README.md first.")
     raise
 
-# Assume meshtastic library is installed
-try:  # noqa: E402
-    import meshtastic  # noqa: E402
-    import meshtastic.serial_interface  # noqa: E402
+import meshtastic.serial_interface  # noqa: E402
 
-    # Define MeshInterface type hint for clarity if meshtastic is available
-    MeshInterface = (
-        meshtastic.serial_interface.SerialInterface
-    )  # Or other interface types
-except ImportError:
-    logger.warning(
-        "meshtastic library not found. AkitaSender will not be able to send data."
-    )
-
-    # Define a placeholder type if meshtastic is not installed
-    class MeshInterface:
-        def sendData(self, *args, **kwargs):
-            logger.error("meshtastic library not installed. Cannot send data.")
-            pass  # No-op sendData
+MeshInterface = meshtastic.serial_interface.SerialInterface
 
 
 class AkitaSender:
@@ -86,6 +73,8 @@ class AkitaSender:
             raise ValueError(
                 "mesh_api cannot be None. Provide a valid Meshtastic interface."
             )
+        if not MIN_PIECE_SIZE <= piece_size <= MAX_PIECE_SIZE:
+            raise ValueError(f"piece_size must be between {MIN_PIECE_SIZE} and {MAX_PIECE_SIZE} bytes.")
         self.mesh = mesh_api
         self.piece_size = piece_size
         self.use_merkle_root = use_merkle_root
@@ -137,6 +126,9 @@ class AkitaSender:
                 f"File is empty: {filepath}. Sending FileStart but no pieces."
             )
             # Allow sending empty files if desired, handle num_pieces=0 case
+        if total_size > MAX_FILE_SIZE:
+            logger.error(f"File is larger than supported maximum: {total_size} > {MAX_FILE_SIZE}")
+            return False
 
         # Calculate number of pieces carefully, handling zero size
         num_pieces = (

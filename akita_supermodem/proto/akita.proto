@@ -31,7 +31,7 @@ message EncryptedPayload {
 // Message sent by the sender to initiate a file transfer.
 message FileStart {
   string filename = 1;
-  uint32 total_size = 2;
+  uint64 total_size = 2;
   uint32 piece_size = 3;
   optional string merkle_root = 4;
   repeated string piece_hashes = 5;

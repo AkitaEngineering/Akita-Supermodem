@@ -16,7 +16,7 @@ Akita Supermodem provides a robust file transfer mechanism suitable for low-band
 
 ## Getting Started
 
-1.  **Installation:** Follow the instructions in the main [README.md](../README.md). Ensure you have `protoc` installed and generate the necessary Python code from `akita.proto` (or use the included stub for testing).
+1.  **Installation:** Follow the instructions in the main [README.md](../README.md). The repository includes generated Python protobuf code; install `protoc` only if you modify `akita.proto`.
 2.  **Usage:** See the [Usage Guide](usage.md) for examples on how to integrate the sender and receiver into your Meshtastic application.
 3.  **Testing:** Run `python -m unittest discover tests` to verify your installation.
 4.  **Logging:** Configure logging in your application to see transfer progress and debug information.

@@ -696,9 +696,7 @@ class AkitaReceiver:
             # Now assemble outside the lock
             self._assemble_and_save(transfer_id, transfer_ref)
 
-        # --- Else (Not All Pieces Received): Do nothing here, wait for periodic check ---
-        # else:
-        #    pass # Wait for check_all_transfers_for_timeouts to send requests
+        # Incomplete transfers are handled by check_all_transfers_for_timeouts.
 
     def check_all_transfers_for_timeouts(self):
         """

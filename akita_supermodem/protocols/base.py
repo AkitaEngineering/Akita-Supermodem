@@ -26,19 +26,19 @@ class BaseProtocolHandler(abc.ABC):
     @abc.abstractmethod
     def start_transfer(self, filepath: str) -> bool:
         """Initiates a file transfer."""
-        pass
+        ...
 
     @abc.abstractmethod
     def handle_message(self, sender_id: str, message) -> None:
         """Handles an incoming message intended for this protocol."""
-        pass
+        ...
 
     @abc.abstractmethod
     def check_timeouts(self) -> None:
         """Periodic tick to check timeouts and perform state transitions."""
-        pass
+        ...
 
     @abc.abstractmethod
     def cleanup(self) -> None:
         """Cleans up any protocol state."""
-        pass
+        ...

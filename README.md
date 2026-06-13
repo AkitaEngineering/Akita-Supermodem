@@ -16,9 +16,9 @@ Akita Supermodem is a Python library implementing a robust file transfer protoco
 * **Integrity Checking:** Uses SHA256 hashes for individual pieces and optional Merkle Trees for overall file verification.
 * **Resume Capability:** Receivers can request missing or corrupted pieces, allowing transfers to recover from interruptions.
 * **Rate Control:** Sender adjusts transmission speed based on acknowledgements and retries.
-* **Protocol Buffers:** Uses efficient Protobuf messages for communication.
+* **Protocol Buffers:** Uses checked-in generated Protobuf messages for communication.
 * **Meshtastic Integration:** Designed to work as a module within the Meshtastic ecosystem using a specific PortNum.
-* **Memory Efficient:** Streams large files in chunks instead of loading entire files into memory.
+* **Memory Efficient:** Streams outbound files in chunks instead of loading entire files into memory.
 * **Thread Safe:** Full thread-safety support for concurrent transfers.
 * **Error Tracking:** Comprehensive error tracking and failure detection.
 * **Logging:** Professional logging system with configurable log levels.
@@ -30,10 +30,10 @@ Akita Supermodem is a Python library implementing a robust file transfer protoco
 ## Installation
 
 1. **Prerequisites:**
-   * Python 3.7+
+   * Python 3.10+
    * `pip` (Python package installer)
    * Meshtastic device/interface for actual usage
-   * `protoc` (Protocol Buffer Compiler) - Optional, only needed if regenerating protobuf code
+   * `protoc` (Protocol Buffer Compiler) - Optional, only needed when regenerating protobuf code
 
 2. **Clone the repository:**
    ```bash
@@ -47,11 +47,9 @@ Akita Supermodem is a Python library implementing a robust file transfer protoco
    ```
 
 4. **Protobuf Code:**
-   The repository includes pre-generated protobuf code (`akita_supermodem/generated/akita_pb2.py`) for immediate use. If you need to regenerate it (e.g., after modifying the protocol):
+   The repository includes generated protobuf code (`akita_supermodem/generated/akita_pb2.py`) for immediate use. If you need to regenerate it after modifying the protocol:
    ```bash
-   # Note: The proto/akita.proto file is not included in the repository
-   # For regeneration, obtain the .proto file and run:
-   protoc --python_out=./akita_supermodem/generated --proto_path=./proto ./proto/akita.proto
+   protoc --python_out=./akita_supermodem/generated --proto_path=./akita_supermodem/proto ./akita_supermodem/proto/akita.proto
    ```
 
 5. **(Optional) Install the package locally:**
@@ -62,6 +60,17 @@ Akita Supermodem is a Python library implementing a robust file transfer protoco
 ## Usage
 
 See the `examples/` directory and the [Usage Guide](docs/usage.md) for detailed integration steps.
+
+Start the web UI:
+```bash
+akita-supermodem ui
+```
+
+Send and receive from the CLI:
+```bash
+akita-supermodem send ./file.bin --recipient !aabbccdd
+akita-supermodem receive --output-dir received_files
+```
 
 **Core Concepts:**
 

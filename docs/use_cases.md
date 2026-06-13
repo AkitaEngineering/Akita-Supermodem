@@ -17,19 +17,19 @@ In environments with heavy surveillance or censorship, relying on centralized se
 ## 3. Remote Field Operations & Research
 Scientists, surveyors, and military personnel often operate in isolated environments (deep forests, oceans, deserts) where setting up traditional networking is impossible.
 * **How it helps**: Sensors and data loggers can be hooked up to a LoRa transceiver. Using the `lora` network profile, accumulated telemetry data or compressed logs can be transmitted back to base camp over distances of several miles.
-* **Key Feature**: Dynamic rate-limiting and protocol fallback ensure the system doesn't flood the delicate RF spectrum.
+* **Key Feature**: Dynamic rate-limiting helps avoid flooding the delicate RF spectrum.
 
 ## 4. Local High-Speed Peer-to-Peer Sharing
 Sometimes you just need to move a massive file (like a video project or a database dump) to a colleague in the same room without uploading it to the internet and downloading it again.
 * **How it helps**: Using the `wifi` network profile, Akita Supermodem bypasses its restrictive mesh delays. It dynamically scales up piece sizes to 4KB (or more) and blasts the data across the local LAN or Ad-Hoc WiFi network.
-* **Key Feature**: Disabling the encryption flag on trusted networks for maximum raw throughput, matching legacy tools like AirDrop or Magic Wormhole.
+* **Key Feature**: Larger WiFi profile chunks reduce transfer overhead while preserving protocol integrity checks.
 
 ## 5. Over-the-Air (OTA) IoT Firmware Updates
 Managing fleets of embedded devices or drones requires sending binary firmware payloads reliably over occasionally dropping connections (like Bluetooth or raw radio).
 * **How it helps**: Using the `bluetooth` or custom profiles, a central dispatcher can send firmware updates.
 * **Key Feature**: The Merkle Tree integrity checks guarantee that the firmware payload hasn't been corrupted in transit before the embedded device attempts to flash it.
 
-## 6. Legacy Protocol Bridging
-Older industrial or radio equipment often only supports ancient file transfer protocols like ZMODEM, YMODEM, or Kermit.
-* **How it helps**: The application encapsulates these legacy protocols within its modern `TransferManager`, bridging the gap between 1980s serial communication and modern encrypted mesh networks.
-* **Key Feature**: Protocol abstraction allows the sender to utilize `KermitHandler` while still receiving modern E2EE benefits and dynamic rate-tuning.
+## 6. Controlled Peer-To-Peer Distribution
+Teams that need repeatable local distribution can standardize on one transfer protocol and one status surface.
+* **How it helps**: The CLI and web UI use the same Supermodem packet format, making send, receive, resume, and verification behavior consistent across deployments.
+* **Key Feature**: Validated configuration profiles keep packet sizing and timing predictable for each network type.

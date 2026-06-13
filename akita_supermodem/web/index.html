@@ -21,8 +21,8 @@
                 <a href="#" class="nav-item" data-tab="settings">Settings</a>
             </nav>
             <div class="status-indicator">
-                <span class="dot pulse-red"></span>
-                <span class="status-text">Mesh Offline</span>
+                <span class="dot pulse-red" id="mesh-dot"></span>
+                <span class="status-text" id="mesh-status">Mesh Offline</span>
             </div>
         </aside>
 
@@ -30,7 +30,11 @@
         <main class="main-content">
             <header class="top-bar">
                 <h2>Supermodem Next-Gen</h2>
-                <button class="btn primary" id="btn-new-transfer">New Transfer</button>
+                <div class="toolbar">
+                    <button class="btn secondary" id="btn-connect">Connect Mesh</button>
+                    <button class="btn secondary" id="btn-disconnect">Disconnect</button>
+                    <button class="btn primary" id="btn-new-transfer">New Transfer</button>
+                </div>
             </header>
 
             <div class="content-area">
@@ -39,23 +43,24 @@
                     <div class="card-grid">
                         <div class="card stat-card glass">
                             <h3>Active Transfers</h3>
-                            <div class="stat-value">0</div>
+                            <div class="stat-value" id="stat-active-transfers">0</div>
                         </div>
                         <div class="card stat-card glass">
                             <h3>Bytes Sent</h3>
-                            <div class="stat-value">0 B</div>
+                            <div class="stat-value" id="stat-bytes-sent">0 B</div>
                         </div>
                         <div class="card stat-card glass">
                             <h3>Bytes Received</h3>
-                            <div class="stat-value">0 B</div>
+                            <div class="stat-value" id="stat-bytes-received">0 B</div>
                         </div>
                     </div>
 
                     <div class="card glass mt-6">
                         <h3 class="card-title">Recent Activity</h3>
-                        <div class="empty-state">
+                        <div class="empty-state" id="activity-empty">
                             <p>No recent activity detected.</p>
                         </div>
+                        <div class="transfer-list" id="activity-list"></div>
                     </div>
                 </section>
 
@@ -66,7 +71,7 @@
                         <form id="settings-form">
                             <div class="form-group">
                                 <label for="default_mesh_node">Default Mesh Node ID</label>
-                                <input type="text" id="default_mesh_node" name="default_mesh_node" placeholder="e.g. !ffffffff">
+                                <input type="text" id="default_mesh_node" name="default_mesh_node">
                             </div>
                             <div class="form-group">
                                 <label for="default_profile">Default Network Profile</label>
@@ -79,7 +84,7 @@
                             </div>
                             <div class="form-group">
                                 <label for="ui_port">UI Server Port</label>
-                                <input type="number" id="ui_port" name="ui_port" placeholder="8080">
+                                <input type="number" id="ui_port" name="ui_port" min="1" max="65535">
                             </div>
                             <button type="submit" class="btn primary">Save Settings</button>
                         </form>
@@ -89,10 +94,29 @@
                 <!-- Transfers Tab -->
                 <section id="tab-transfers" class="tab-content">
                     <div class="card glass">
+                        <h3 class="card-title">Start Transfer</h3>
+                        <form id="transfer-form">
+                            <div class="form-group">
+                                <label for="transfer_recipient">Recipient Node ID</label>
+                                <input type="text" id="transfer_recipient" name="transfer_recipient">
+                            </div>
+                            <div class="form-group">
+                                <label for="transfer_filepath">File Path</label>
+                                <input type="text" id="transfer_filepath" name="transfer_filepath">
+                            </div>
+                            <div class="form-group">
+                                <label for="transfer_piece_size">Piece Size</label>
+                                <input type="number" id="transfer_piece_size" name="transfer_piece_size" min="64" max="1048576">
+                            </div>
+                            <button type="submit" class="btn primary">Start Transfer</button>
+                        </form>
+                    </div>
+                    <div class="card glass mt-6">
                         <h3 class="card-title">Transfer Queue</h3>
-                        <div class="empty-state">
+                        <div class="empty-state" id="transfer-empty">
                             <p>Queue is empty.</p>
                         </div>
+                        <div class="transfer-list" id="transfer-list"></div>
                     </div>
                 </section>
 
