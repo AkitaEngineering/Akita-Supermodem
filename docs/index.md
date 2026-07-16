@@ -32,6 +32,9 @@ Akita Supermodem provides a robust file transfer mechanism suitable for low-band
 * [Protocol Details](protocol.md)
 * [Usage Guide](usage.md)
 * [Production Readiness](production_readiness.md)
+* [PSK And Artifact Signing Runbook](key_management.md)
+* [Hardware Test Plan](hardware_test_plan.md)
+* [Release Runbook](release_runbook.md)
 * [UAS/UAV Readiness Notes](uas_uav.md)
 * [Examples](../examples/)
 * [Improvements Summary](../IMPROVEMENTS_SUMMARY.md) - Recent enhancements and improvements

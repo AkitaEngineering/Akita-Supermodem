@@ -63,6 +63,7 @@ class RuntimeState:
                     self.mesh,
                     save_function=self._save_received_file,
                     profile_name=settings.get("default_profile"),
+                    save_path_function=self._save_received_file_path,
                 )
                 self.mesh.add_on_receive(self._on_receive)
                 return {"connected": True, "device": self.device}
@@ -135,6 +136,18 @@ class RuntimeState:
         temp_filepath = filepath.with_name(f".{filepath.name}.part")
         temp_filepath.write_bytes(data)
         os.replace(temp_filepath, filepath)
+
+    def _save_received_file_path(self, filename: str, source_path: str) -> None:
+        save_dir = settings.config_file.parent / "received_files"
+        save_dir.mkdir(parents=True, exist_ok=True)
+        safe_filename = sanitize_filename(filename)
+        base, ext = os.path.splitext(safe_filename)
+        filepath = save_dir / safe_filename
+        counter = 1
+        while filepath.exists():
+            filepath = save_dir / f"{base}_{counter}{ext}"
+            counter += 1
+        os.replace(source_path, filepath)
 
     def _on_receive(self, packet, interface) -> None:
         payload = packet.get("decoded", {}).get("payload")

@@ -93,7 +93,7 @@ akita-supermodem send ./flight-log.bin --recipient !aabbccdd --profile uas
 ## Code Quality
 
 The codebase follows Python best practices with:
-- Comprehensive test coverage (20 tests passing)
+- Comprehensive test coverage (26 tests passing)
 - Linting with flake8 (120 char line limit, PEP 8 compliance)
 - Type hints and documentation
 - Thread-safe implementation
@@ -111,6 +111,9 @@ flake8 akita_supermodem/ examples/ tests/ --max-line-length=120
 * [Usage Guide](docs/usage.md)
 * [Production Readiness](docs/production_readiness.md)
 * [UAS/UAV Readiness Notes](docs/uas_uav.md)
+* [PSK And Artifact Signing Runbook](docs/key_management.md)
+* [Hardware Test Plan](docs/hardware_test_plan.md)
+* [Release Runbook](docs/release_runbook.md)
 * [Code Review Status](CODE_REVIEW_STATUS.md)
 * [Improvements Summary](IMPROVEMENTS_SUMMARY.md)
 * [Change Log](CHANGELOG.md)

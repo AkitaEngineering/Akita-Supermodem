@@ -18,9 +18,18 @@ class TransferManager:
     Coordinates E2EE Handshakes and delegates to specific protocol handlers.
     """
 
-    def __init__(self, mesh_api, save_function: Callable[[str, bytes], None], profile_name: str = "meshtastic"):
+    def __init__(
+        self,
+        mesh_api,
+        save_function: Callable[[str, bytes], None],
+        profile_name: str = "meshtastic",
+        save_path_function: Optional[Callable[[str, str], None]] = None,
+        event_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ):
         self.mesh = mesh_api
         self.save_function = save_function
+        self.save_path_function = save_path_function
+        self.event_callback = event_callback
         self.profile = get_profile(profile_name)
         self.pre_shared_key = self._load_pre_shared_key()
         if self.profile.require_authentication and not self.pre_shared_key:
@@ -68,6 +77,7 @@ class TransferManager:
         """Initiates a file transfer. Starts with a KeyExchange."""
         if protocol not in SUPPORTED_PROTOCOLS:
             raise ValueError("Only the Supermodem protocol is production-supported in this release.")
+        self._validate_profile_mtu()
 
         session_id = self._generate_session_id()
         crypto = CryptoManager(self.profile.encryption_enabled, self.pre_shared_key)
@@ -96,6 +106,12 @@ class TransferManager:
 
         logger.info(
             f"Initiating Key Exchange with {recipient_id} (Session {session_id})"
+        )
+        self._emit_event(
+            "handshake_started",
+            session_id=session_id,
+            peer=recipient_id,
+            protocol=protocol,
         )
         self.mesh.sendData(
             destinationId=recipient_id,
@@ -139,11 +155,18 @@ class TransferManager:
             # We initiated this, and peer responded with their key
             if crypto.derive_shared_key(kx.public_key, session_id):
                 logger.info(f"Handshake complete with {sender_id}. Starting transfer.")
+                self._emit_event("handshake_complete", session_id=session_id, peer=sender_id)
                 self._instantiate_handler_and_start(
                     session_id, sender_id, intent["protocol"], intent["filepath"]
                 )
             else:
                 self.session_errors[session_id] = "key_derivation_failed"
+                self._emit_event(
+                    "transfer_failed",
+                    session_id=session_id,
+                    peer=sender_id,
+                    error="key_derivation_failed",
+                )
                 logger.error("Failed to derive shared key.")
         else:
             # Peer is initiating a new transfer to us
@@ -160,6 +183,7 @@ class TransferManager:
                 # in-process transport can send encrypted FileStart immediately
                 # after receiving our key.
                 self._instantiate_handler(session_id, sender_id, kx.protocol)
+                self._emit_event("handshake_complete", session_id=session_id, peer=sender_id)
 
                 # Reply with our public key
                 reply_kx = akita_pb2.KeyExchange(
@@ -177,6 +201,12 @@ class TransferManager:
                 )
             else:
                 self.session_errors[session_id] = "key_derivation_failed"
+                self._emit_event(
+                    "transfer_failed",
+                    session_id=session_id,
+                    peer=sender_id,
+                    error="key_derivation_failed",
+                )
                 logger.error("Failed to derive shared key for incoming connection.")
 
     def _instantiate_handler(
@@ -206,10 +236,28 @@ class TransferManager:
                 payload=out_msg.SerializeToString(),
                 portNum=AKITA_CONTENT_TYPE,
             )
+            self._emit_event(
+                "encrypted_payload_sent",
+                session_id=session_id,
+                peer=peer_id,
+                sequence=sequence,
+                payload_bytes=len(out_msg.SerializeToString()),
+            )
 
         handler = None
         if protocol == akita_pb2.PROTOCOL_SUPERMODEM:
-            handler = SupermodemHandler(send_encrypted, self.save_function, profile=self.profile)
+            handler = SupermodemHandler(
+                send_encrypted,
+                self.save_function,
+                profile=self.profile,
+                save_path_function=self.save_path_function,
+                event_callback=lambda event: self._emit_event(
+                    event.get("event", "protocol_event"),
+                    session_id=session_id,
+                    peer=peer_id,
+                    **{key: value for key, value in event.items() if key != "event"},
+                ),
+            )
         else:
             logger.error(f"Unsupported protocol {protocol}")
 
@@ -225,6 +273,12 @@ class TransferManager:
         if handler:
             if not handler.start_transfer(filepath):
                 self.session_errors[session_id] = handler.last_error or "transfer_start_failed"
+                self._emit_event(
+                    "transfer_failed",
+                    session_id=session_id,
+                    peer=peer_id,
+                    error=self.session_errors[session_id],
+                )
 
     def _handle_encrypted_payload(
         self, sender_id: str, payload: akita_pb2.EncryptedPayload
@@ -241,6 +295,12 @@ class TransferManager:
 
         if payload.sequence in received_sequences:
             logger.warning(f"Rejected replayed encrypted payload for session {session_id} sequence {payload.sequence}")
+            self._emit_event(
+                "replay_rejected",
+                session_id=session_id,
+                peer=sender_id,
+                sequence=payload.sequence,
+            )
             return
 
         try:
@@ -254,6 +314,12 @@ class TransferManager:
             handler.handle_message(inner_msg)
         except Exception as e:
             self.session_errors[session_id] = "decrypt_or_parse_failed"
+            self._emit_event(
+                "transfer_failed",
+                session_id=session_id,
+                peer=sender_id,
+                error="decrypt_or_parse_failed",
+            )
             logger.error(f"Decryption or parsing failed: {e}")
 
     def check_timeouts(self):
@@ -302,3 +368,21 @@ class TransferManager:
 
     def _associated_data(self, session_id: str, sequence: int) -> bytes:
         return b"akita-supermodem-v2|" + session_id.encode("utf-8") + b"|" + sequence.to_bytes(8, "big")
+
+    def _validate_profile_mtu(self) -> None:
+        # Conservative estimate: protobuf framing + encrypted wrapper + nonce/MAC/sequence overhead.
+        estimated_piece_payload = self.profile.piece_size + 96
+        if estimated_piece_payload > self.profile.max_payload_bytes:
+            raise ValueError(
+                f"Profile '{self.profile.name}' piece_size={self.profile.piece_size} exceeds "
+                f"max_payload_bytes={self.profile.max_payload_bytes} after protocol overhead."
+            )
+
+    def _emit_event(self, event: str, **fields: Any) -> None:
+        if not self.event_callback:
+            return
+        payload = {"event": event, **fields}
+        try:
+            self.event_callback(payload)
+        except Exception as e:
+            logger.warning(f"Event callback failed for {event}: {e}")

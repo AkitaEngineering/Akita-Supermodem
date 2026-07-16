@@ -17,7 +17,12 @@ Ready now:
   bytes.
 - Resume requests for missing pieces.
 - Sender-side on-demand piece reads instead of whole-file buffering.
+- Receiver-side streaming staging to temporary files for the secure transfer path.
 - Atomic receiver file publish through temporary `.part` files.
+- Structured progress/event callbacks from `TransferManager`.
+- Software MTU budget checks per profile.
+- Ed25519 artifact signing helpers for downstream mission validation.
+- PSK/key-management, hardware-test, and release runbooks.
 - Unit and fake-mesh integration tests.
 - Lint and compile verification.
 
@@ -32,17 +37,16 @@ These items remain before a production milestone:
 - Transport MTU validation for each supported radio/profile combination.
 - Long-duration soak tests covering interrupted transfers, duplicate packets,
   corrupt packets, replay attempts, power loss, and receiver restarts.
-- Receiver-side streaming assembly for very large payloads so completed files do
-  not need to be joined fully in memory.
-- Structured progress callbacks and event logs for ground-station/operator UI.
-- Operational key-management procedure for PSK creation, rotation, storage, and
-  revocation.
-- Signed mission/artifact validation outside Supermodem before any aircraft
-  software consumes received files.
-- Release packaging workflow with versioned artifacts, changelog entries, and
-  install/upgrade notes.
-- Production runbook covering setup, health checks, expected transfer rates,
-  failure modes, recovery, and log collection.
+- Production release rehearsal using the release runbook and a versioned package
+  artifact.
+- Operational sign-off that the PSK/key-management and artifact-signing runbooks
+  are followed by the field team.
+
+Supporting docs:
+
+- [PSK And Artifact Signing Runbook](key_management.md)
+- [Hardware Test Plan](hardware_test_plan.md)
+- [Release Runbook](release_runbook.md)
 
 ## Definition Of Done
 
@@ -59,9 +63,8 @@ Call the production milestone complete only when:
 
 ## Recommended Next Sprint
 
-1. Add a fake-transport fault-injection suite for loss, duplication, corruption,
-   replay, and restart scenarios.
-2. Add receiver-side streaming assembly with hash verification.
-3. Add structured progress/event callbacks from `TransferManager`.
-4. Build a hardware-in-the-loop test script for two Meshtastic devices.
-5. Write the PSK/key-management runbook.
+1. Expand fake-transport fault injection for receiver restarts and long outages.
+2. Build a hardware-in-the-loop test script for two Meshtastic devices.
+3. Run the RF test matrix in [Hardware Test Plan](hardware_test_plan.md).
+4. Rehearse packaging and rollback using [Release Runbook](release_runbook.md).
+5. Validate the consuming mission service against signed artifacts.

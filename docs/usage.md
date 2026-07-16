@@ -102,6 +102,12 @@ manager.start_transfer("!aabbccdd", "./flight-log.bin")
 For long-running applications, call `manager.check_timeouts()` periodically and
 surface `manager.get_status()` in your operator UI.
 
+For large received files, pass `save_path_function(filename, source_path)` to
+publish the verified staging file without reading it fully into memory. For
+operator telemetry, pass `event_callback(event)` to receive structured transfer
+events such as `handshake_started`, `piece_sent`, `piece_received`, and
+`transfer_complete`.
+
 Configure logging in the host application:
 
 ```python
@@ -119,6 +125,9 @@ logging.basicConfig(level=logging.INFO)
 - Compressible file pieces are compressed only when the compressed bytes are smaller than the original piece.
 - Filenames are sanitized before saving to prevent path traversal.
 - Completed files are written through temporary `.part` files and atomically renamed into place.
+- Secure receives can publish verified staging files by path to avoid whole-file memory use.
+- `TransferManager` can emit structured progress and failure events.
 - Piece hashes and Merkle roots are verified before assembly.
+- Ed25519 helpers are available for mission/artifact signature validation outside the transport.
 - Missing or corrupt pieces are requested again until retry limits are reached.
 - Sender state is protected by locks for concurrent callback access.

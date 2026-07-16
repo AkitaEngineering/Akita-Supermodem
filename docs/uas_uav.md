@@ -88,9 +88,9 @@ The next development pass should prioritize:
 
 - Hardware-in-the-loop tests with the exact radios and companion computers.
 - Transport MTU discovery or per-radio packet-size validation.
-- Streaming receiver assembly for very large payloads.
-- More fault injection for replayed packets, power loss, and long RF outages.
-- Add structured progress callbacks for ground-station display.
+- More fault injection for receiver restarts, power loss, and long RF outages.
+- Ground-station display work using the structured progress events.
+- Mission-service integration using signed artifact validation.
 
 ## Field Trial Checklist
 

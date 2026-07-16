@@ -108,8 +108,24 @@ def receive(port, output_dir, timeout, retries, interval):
         os.replace(temp_target, target)
         click.echo(f"Saved {target} ({len(data)} bytes)")
 
+    def save_file_path(filename: str, source_path: str):
+        safe = sanitize_filename(filename)
+        target = output_path / safe
+        base, ext = os.path.splitext(safe)
+        counter = 1
+        while target.exists():
+            target = output_path / f"{base}_{counter}{ext}"
+            counter += 1
+        os.replace(source_path, target)
+        click.echo(f"Saved {target} ({target.stat().st_size} bytes)")
+
     profile_name = settings.get("default_profile")
-    manager = TransferManager(interface, save_function=save_file, profile_name=profile_name)
+    manager = TransferManager(
+        interface,
+        save_function=save_file,
+        profile_name=profile_name,
+        save_path_function=save_file_path,
+    )
     manager.profile.timeout = interval
     manager.profile.max_retries = retries
 

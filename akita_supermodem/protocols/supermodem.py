@@ -3,7 +3,8 @@ import time
 import logging
 import threading
 import zlib
-from typing import Callable, Dict, Any, List
+import tempfile
+from typing import Callable, Dict, Any, List, Optional
 
 from .base import BaseProtocolHandler
 from ..generated import akita_pb2
@@ -30,9 +31,13 @@ class SupermodemHandler(BaseProtocolHandler):
         send_function: Callable[[akita_pb2.InnerMessage], None],
         save_function: Callable[[str, bytes], None],
         profile=None,
+        save_path_function: Optional[Callable[[str, str], None]] = None,
+        event_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
     ):
         super().__init__(None, None, save_function, profile=profile)
         self.send_inner = send_function
+        self.save_path = save_path_function
+        self.event_callback = event_callback
         self.piece_size = self.profile.piece_size
 
         # Sender state
@@ -124,6 +129,13 @@ class SupermodemHandler(BaseProtocolHandler):
             }
 
         self.send_inner(msg)
+        self._emit_event(
+            "transfer_started",
+            direction="send",
+            filename=os.path.basename(filepath),
+            total_size=total_size,
+            num_pieces=num_pieces,
+        )
 
         # Send pieces
         self._send_pieces(list(range(num_pieces)))
@@ -192,6 +204,15 @@ class SupermodemHandler(BaseProtocolHandler):
                 self.transfer_state["wire_data_bytes"] += len(piece_proto.data)
                 if piece_proto.compressed:
                     self.transfer_state["compressed_pieces"] += 1
+            self._emit_event(
+                "piece_sent",
+                direction="send",
+                piece_index=i,
+                num_pieces=num_pieces,
+                wire_bytes=len(piece_proto.data),
+                plain_bytes=len(data),
+                compressed=piece_proto.compressed,
+            )
             time.sleep(delay)
 
     def _build_piece_data(self, index: int, data: bytes) -> akita_pb2.PieceData:
@@ -255,6 +276,10 @@ class SupermodemHandler(BaseProtocolHandler):
             self.last_error = "hash_count_mismatch"
             return
 
+        temp_file = tempfile.NamedTemporaryFile(prefix="akita_receive_", suffix=".part", delete=False)
+        temp_path = temp_file.name
+        temp_file.close()
+
         with self._lock:
             self.receive_state = {
                 "filename": fs.filename,
@@ -263,12 +288,21 @@ class SupermodemHandler(BaseProtocolHandler):
                 "num_pieces": num_pieces,
                 "merkle_root": fs.merkle_root if fs.HasField("merkle_root") else None,
                 "piece_hashes": piece_hashes,
-                "received_pieces": {},
+                "received_indices": set(),
                 "received_hashes": {},
                 "missing_indices": set(range(num_pieces)),
                 "complete": False,
                 "failed": False,
+                "temp_path": temp_path,
+                "temp_published": False,
             }
+        self._emit_event(
+            "transfer_started",
+            direction="receive",
+            filename=fs.filename,
+            total_size=total_size,
+            num_pieces=num_pieces,
+        )
 
         if num_pieces == 0 and total_size == 0:
             self._assemble()
@@ -283,7 +317,7 @@ class SupermodemHandler(BaseProtocolHandler):
             if not (0 <= index < num_pieces):
                 logger.warning(f"Ignoring out-of-range piece index {index}.")
                 return
-            if index in self.receive_state["received_pieces"]:
+            if index in self.receive_state["received_indices"]:
                 return
 
             expected_len = self.receive_state["piece_size"]
@@ -321,9 +355,31 @@ class SupermodemHandler(BaseProtocolHandler):
                     logger.warning(f"Rejecting piece {index}: hash mismatch.")
                     request_missing = True
                 else:
-                    self.receive_state["received_pieces"][index] = piece_bytes
+                    temp_path = self.receive_state["temp_path"]
+                    offset = index * self.receive_state["piece_size"]
+                    try:
+                        with open(temp_path, "r+b") as f:
+                            f.seek(offset)
+                            f.write(piece_bytes)
+                    except OSError as e:
+                        logger.error(f"Failed writing piece {index} to staging file: {e}")
+                        self.receive_state["failed"] = True
+                        self.last_error = "staging_write_failed"
+                        request_missing = False
+                        return
+                    self.receive_state["received_indices"].add(index)
                     self.receive_state["received_hashes"][index] = piece_hash
                     self.receive_state["missing_indices"].discard(index)
+                    received_count = len(self.receive_state["received_indices"])
+
+        if not request_missing and "received_count" in locals():
+            self._emit_event(
+                "piece_received",
+                direction="receive",
+                piece_index=index,
+                received_pieces=received_count,
+                num_pieces=num_pieces,
+            )
 
         if request_missing:
             self._send_resume_request()
@@ -376,7 +432,7 @@ class SupermodemHandler(BaseProtocolHandler):
             if self.receive_state.get("complete"):
                 return
             if (
-                len(self.receive_state["received_pieces"])
+                len(self.receive_state["received_indices"])
                 == self.receive_state["num_pieces"]
             ):
                 num_pieces = self.receive_state["num_pieces"]
@@ -392,9 +448,10 @@ class SupermodemHandler(BaseProtocolHandler):
                         should_assemble = True
                     else:
                         logger.warning("Merkle root mismatch; requesting all pieces again.")
-                        self.receive_state["received_pieces"].clear()
+                        self.receive_state["received_indices"].clear()
                         self.receive_state["received_hashes"].clear()
                         self.receive_state["missing_indices"] = set(range(num_pieces))
+                        self._reset_staging_file(self.receive_state)
                         should_request = True
                 elif piece_hashes:
                     mismatched = {
@@ -405,7 +462,7 @@ class SupermodemHandler(BaseProtocolHandler):
                     if mismatched:
                         logger.warning(f"Piece hash verification failed for: {sorted(mismatched)}.")
                         for i in mismatched:
-                            self.receive_state["received_pieces"].pop(i, None)
+                            self.receive_state["received_indices"].discard(i)
                             self.receive_state["received_hashes"].pop(i, None)
                         self.receive_state["missing_indices"].update(mismatched)
                         should_request = True
@@ -422,15 +479,19 @@ class SupermodemHandler(BaseProtocolHandler):
 
     def _assemble(self):
         with self._lock:
-            pieces = [
-                self.receive_state["received_pieces"][i]
-                for i in range(self.receive_state["num_pieces"])
-            ]
-            data = b"".join(pieces)
-            if len(data) != self.receive_state["total_size"]:
+            if len(self.receive_state["received_indices"]) != self.receive_state["num_pieces"]:
+                logger.error(
+                    f"Rejecting assembled data for '{self.receive_state['filename']}': incomplete staging file."
+                )
+                self.receive_state["failed"] = True
+                self.last_error = "incomplete_staging_file"
+                return
+            temp_path = self.receive_state["temp_path"]
+            staged_size = os.path.getsize(temp_path) if os.path.exists(temp_path) else -1
+            if staged_size != self.receive_state["total_size"]:
                 logger.error(
                     f"Rejecting assembled data for '{self.receive_state['filename']}': "
-                    f"expected {self.receive_state['total_size']} bytes, got {len(data)}."
+                    f"expected {self.receive_state['total_size']} bytes, got {staged_size}."
                 )
                 self.receive_state["failed"] = True
                 self.last_error = "assembled_size_mismatch"
@@ -438,8 +499,27 @@ class SupermodemHandler(BaseProtocolHandler):
             safe_name = sanitize_filename(self.receive_state["filename"])
             self.receive_state["complete"] = True
 
-        if self.save:
-            self.save(safe_name, data)
+        if self.save_path:
+            self.save_path(safe_name, temp_path)
+            with self._lock:
+                if self.receive_state:
+                    self.receive_state["temp_published"] = True
+        elif self.save:
+            with open(temp_path, "rb") as f:
+                self.save(safe_name, f.read())
+            try:
+                os.unlink(temp_path)
+            except OSError as e:
+                logger.warning(f"Failed removing staging file {temp_path}: {e}")
+            with self._lock:
+                if self.receive_state:
+                    self.receive_state["temp_published"] = True
+        self._emit_event(
+            "transfer_complete",
+            direction="receive",
+            filename=safe_name,
+            total_size=staged_size,
+        )
         self._send_resume_request(force=True)
 
     def _send_resume_request(self, force: bool = False):
@@ -447,7 +527,7 @@ class SupermodemHandler(BaseProtocolHandler):
             if not self.receive_state or self.receive_state.get("failed"):
                 return
             missing = sorted(self.receive_state["missing_indices"])
-            acked = sorted(self.receive_state["received_pieces"].keys())
+            acked = sorted(self.receive_state["received_indices"])
             if not force and not missing:
                 return
 
@@ -474,8 +554,39 @@ class SupermodemHandler(BaseProtocolHandler):
 
     def cleanup(self) -> None:
         with self._lock:
+            self._cleanup_receive_temp_locked()
             self.transfer_state.clear()
             self.receive_state.clear()
+
+    def _reset_staging_file(self, receive_state: Dict[str, Any]) -> None:
+        temp_path = receive_state.get("temp_path")
+        if not temp_path:
+            return
+        try:
+            with open(temp_path, "wb"):
+                pass
+        except OSError as e:
+            logger.error(f"Failed resetting staging file {temp_path}: {e}")
+            receive_state["failed"] = True
+            self.last_error = "staging_reset_failed"
+
+    def _cleanup_receive_temp_locked(self) -> None:
+        temp_path = self.receive_state.get("temp_path") if self.receive_state else None
+        if not temp_path or self.receive_state.get("temp_published"):
+            return
+        try:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+        except OSError as e:
+            logger.warning(f"Failed removing staging file {temp_path}: {e}")
+
+    def _emit_event(self, event: str, **fields: Any) -> None:
+        if not self.event_callback:
+            return
+        try:
+            self.event_callback({"event": event, **fields})
+        except Exception as e:
+            logger.warning(f"Protocol event callback failed for {event}: {e}")
 
     def get_status(self) -> Dict[str, Any]:
         with self._lock:
@@ -506,7 +617,7 @@ class SupermodemHandler(BaseProtocolHandler):
 
             if self.receive_state:
                 num_pieces = self.receive_state.get("num_pieces", 0)
-                received = len(self.receive_state.get("received_pieces", {}))
+                received = len(self.receive_state.get("received_indices", set()))
                 complete = bool(self.receive_state.get("complete"))
                 failed = bool(self.receive_state.get("failed"))
                 return {

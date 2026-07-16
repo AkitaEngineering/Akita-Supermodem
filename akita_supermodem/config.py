@@ -17,6 +17,7 @@ class NetworkProfile:
     compression_enabled: bool = False
     compression_min_bytes: int = 256
     compression_level: int = 6
+    max_payload_bytes: int = 220
 
 
 # Default predefined profiles
@@ -31,6 +32,7 @@ NETWORK_PROFILES: Dict[str, NetworkProfile] = {
         encryption_enabled=True,  # E2EE strongly enforced
         compression_enabled=True,
         compression_min_bytes=96,
+        max_payload_bytes=256,
     ),
     "lora": NetworkProfile(
         name="lora",
@@ -42,6 +44,7 @@ NETWORK_PROFILES: Dict[str, NetworkProfile] = {
         encryption_enabled=True,
         compression_enabled=True,
         compression_min_bytes=128,
+        max_payload_bytes=384,
     ),
     "bluetooth": NetworkProfile(
         name="bluetooth",
@@ -53,6 +56,7 @@ NETWORK_PROFILES: Dict[str, NetworkProfile] = {
         encryption_enabled=True,
         compression_enabled=True,
         compression_min_bytes=256,
+        max_payload_bytes=512,
     ),
     "wifi": NetworkProfile(
         name="wifi",
@@ -63,6 +67,7 @@ NETWORK_PROFILES: Dict[str, NetworkProfile] = {
         max_retries=3,
         encryption_enabled=True,  # Could be toggled off for raw speed if desired
         compression_enabled=False,
+        max_payload_bytes=8192,
     ),
     "uas": NetworkProfile(
         name="uas",
@@ -76,6 +81,7 @@ NETWORK_PROFILES: Dict[str, NetworkProfile] = {
         compression_enabled=True,
         compression_min_bytes=96,
         compression_level=6,
+        max_payload_bytes=256,
     ),
 }
 

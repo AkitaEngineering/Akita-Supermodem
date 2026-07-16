@@ -26,6 +26,28 @@ class FakeMesh:
         recipient.manager.handle_incoming_message(self.node_id, payload)
 
 
+class DropOnceMesh(FakeMesh):
+    def __init__(self, node_id, drop_destination=None, drop_sequence=None):
+        super().__init__(node_id)
+        self.drop_destination = drop_destination
+        self.drop_sequence = drop_sequence
+        self.dropped = False
+
+    def sendData(self, destinationId, payload, portNum):
+        if portNum == AKITA_CONTENT_TYPE and not self.dropped:
+            msg = akita_pb2.AkitaMessage()
+            msg.ParseFromString(payload)
+            if (
+                destinationId == self.drop_destination
+                and msg.HasField("encrypted_payload")
+                and msg.encrypted_payload.sequence == self.drop_sequence
+            ):
+                self.sent_payloads.append((destinationId, payload))
+                self.dropped = True
+                return
+        super().sendData(destinationId, payload, portNum)
+
+
 class TestTransferManager(unittest.TestCase):
     def setUp(self):
         FakeMesh.registry = {}
@@ -137,6 +159,115 @@ class TestTransferManager(unittest.TestCase):
         self.assertEqual(received, [])
         self.assertFalse(any(status.get("complete") for status in sender.get_status()))
         self.assertTrue(any(status.get("failed") for status in receiver.get_status()))
+
+    @patch.dict(os.environ, {"AKITA_SUPERMODEM_PSK": "test-shared-secret"}, clear=True)
+    def test_receive_can_publish_staged_file_by_path(self):
+        sender_mesh = FakeMesh("!sender")
+        receiver_mesh = FakeMesh("!receiver")
+        bytes_save_calls = []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "saved.bin"
+
+            def save_path(name, source_path):
+                self.assertEqual(name, "flight-log.bin")
+                os.replace(source_path, output)
+
+            sender = TransferManager(sender_mesh, save_function=lambda _name, _data: None, profile_name="uas")
+            receiver = TransferManager(
+                receiver_mesh,
+                save_function=lambda name, data: bytes_save_calls.append((name, data)),
+                save_path_function=save_path,
+                profile_name="uas",
+            )
+            sender.profile.initial_delay = 0.0
+            receiver.profile.initial_delay = 0.0
+            sender_mesh.manager = sender
+            receiver_mesh.manager = receiver
+
+            source = Path(temp_dir) / "flight-log.bin"
+            payload = b"path-save-payload" * 20
+            source.write_bytes(payload)
+            sender.start_transfer("!receiver", str(source))
+
+            self.assertEqual(output.read_bytes(), payload)
+            self.assertEqual(bytes_save_calls, [])
+
+    @patch.dict(os.environ, {"AKITA_SUPERMODEM_PSK": "test-shared-secret"}, clear=True)
+    def test_mtu_guard_rejects_oversized_profile_piece(self):
+        mesh = FakeMesh("!sender")
+        manager = TransferManager(mesh, save_function=lambda _name, _data: None, profile_name="uas")
+        manager.profile.piece_size = 1024
+        manager.profile.max_payload_bytes = 256
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "too-large.bin"
+            source.write_bytes(b"x" * 64)
+            with self.assertRaises(ValueError):
+                manager.start_transfer("!receiver", str(source))
+
+    @patch.dict(os.environ, {"AKITA_SUPERMODEM_PSK": "test-shared-secret"}, clear=True)
+    def test_events_are_emitted_for_transfer_progress(self):
+        sender_mesh = FakeMesh("!sender")
+        receiver_mesh = FakeMesh("!receiver")
+        events = []
+
+        sender = TransferManager(
+            sender_mesh,
+            save_function=lambda _name, _data: None,
+            profile_name="uas",
+            event_callback=events.append,
+        )
+        receiver = TransferManager(
+            receiver_mesh,
+            save_function=lambda _name, _data: None,
+            profile_name="uas",
+            event_callback=events.append,
+        )
+        sender.profile.initial_delay = 0.0
+        receiver.profile.initial_delay = 0.0
+        sender_mesh.manager = sender
+        receiver_mesh.manager = receiver
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "flight-log.bin"
+            source.write_bytes(b"event-payload" * 20)
+            sender.start_transfer("!receiver", str(source))
+
+        event_names = {event["event"] for event in events}
+        self.assertIn("handshake_started", event_names)
+        self.assertIn("handshake_complete", event_names)
+        self.assertIn("piece_sent", event_names)
+        self.assertIn("piece_received", event_names)
+        self.assertIn("transfer_complete", event_names)
+
+    @patch.dict(os.environ, {"AKITA_SUPERMODEM_PSK": "test-shared-secret"}, clear=True)
+    def test_dropped_piece_recovers_with_resume_request(self):
+        sender_mesh = DropOnceMesh("!sender", drop_destination="!receiver", drop_sequence=1)
+        receiver_mesh = FakeMesh("!receiver")
+        received = {}
+
+        sender = TransferManager(sender_mesh, save_function=lambda _name, _data: None, profile_name="uas")
+        receiver = TransferManager(
+            receiver_mesh,
+            save_function=lambda name, data: received.setdefault(name, data),
+            profile_name="uas",
+        )
+        sender.profile.initial_delay = 0.0
+        receiver.profile.initial_delay = 0.0
+        receiver.profile.timeout = 0.0
+        sender_mesh.manager = sender
+        receiver_mesh.manager = receiver
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "flight-log.bin"
+            payload = b"resume-me" * 64
+            source.write_bytes(payload)
+            sender.start_transfer("!receiver", str(source))
+            receiver.check_timeouts()
+
+        self.assertTrue(sender_mesh.dropped)
+        self.assertEqual(received, {"flight-log.bin": payload})
+        self.assertTrue(sender.get_status()[0]["complete"])
 
 
 if __name__ == "__main__":

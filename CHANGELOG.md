@@ -46,9 +46,14 @@ All notable changes to Akita Supermodem will be documented in this file.
 - ChaCha20-Poly1305 associated data binding for session IDs and encrypted payload sequence numbers
 - Replay rejection for duplicate encrypted payload sequence numbers
 - Adaptive per-piece compression with bounded decompression on receive
+- Receiver-side streaming staging to temporary files
+- Structured transfer progress/event callbacks
+- Software MTU budget checks per profile
+- Ed25519 artifact signing helpers
 - Fake-mesh integration tests for encrypted transfer, replay rejection, wrong PSK handling, and compression
 - Production readiness checklist
 - UAS/UAV readiness notes
+- PSK/key-management, hardware-test, and release runbooks
 - `.flake8` configuration excluding checked-in generated protobuf code
 
 ### Changed
@@ -64,7 +69,5 @@ All notable changes to Akita Supermodem will be documented in this file.
 
 ### Planned
 - Hardware-in-the-loop test scripts for target radios
-- Receiver-side streaming assembly for very large payloads
-- Structured progress callbacks and event logs
 - Transport MTU validation per radio/profile
 

@@ -20,6 +20,13 @@ from .common import (
     calculate_hash,
     calculate_merkle_root,
 )
+from .artifact_signing import (
+    generate_keypair,
+    sign_bytes,
+    verify_bytes,
+    sign_file,
+    verify_file,
+)
 
 __version__ = "0.1.0"
 
@@ -39,4 +46,9 @@ __all__ = [
     "sanitize_filename",
     "calculate_hash",
     "calculate_merkle_root",
+    "generate_keypair",
+    "sign_bytes",
+    "verify_bytes",
+    "sign_file",
+    "verify_file",
 ]
