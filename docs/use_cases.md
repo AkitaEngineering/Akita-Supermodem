@@ -33,3 +33,8 @@ Managing fleets of embedded devices or drones requires sending binary firmware p
 Teams that need repeatable local distribution can standardize on one transfer protocol and one status surface.
 * **How it helps**: The CLI and web UI use the same Supermodem packet format, making send, receive, resume, and verification behavior consistent across deployments.
 * **Key Feature**: Validated configuration profiles keep packet sizing and timing predictable for each network type.
+
+## 7. UAS/UAV Mission Data Transfer
+Uncrewed aircraft and ground teams often need a low-bandwidth path for non-flight-critical files when conventional IP links are unavailable or unreliable.
+* **How it helps**: Akita Supermodem can move compressed logs, sensor snapshots, payload reports, or validated mission artifacts between a companion computer and ground station over mesh radios.
+* **Key Feature**: Chunking, integrity verification, and resume requests make it suitable for delayed mission data, while [UAS/UAV Readiness Notes](uas_uav.md) define the extra gates needed before production aircraft use.

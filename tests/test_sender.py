@@ -3,6 +3,8 @@ Unit tests for AkitaSender.
 """
 
 import unittest
+import tempfile
+from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch
 from akita_supermodem.sender import AkitaSender
 
@@ -36,19 +38,28 @@ class TestAkitaSender(unittest.TestCase):
 
     def test_get_piece_data(self):
         """Test retrieving piece data."""
-        # Set up a transfer
-        recipient_id = "test_recipient"
-        self.sender.active_transfers[recipient_id] = {"num_pieces": 2, "pieces": [b"piece0", b"piece1"]}
+        with tempfile.TemporaryDirectory() as temp_dir:
+            filepath = Path(temp_dir) / "pieces.bin"
+            filepath.write_bytes(b"piece0piece1")
 
-        piece = self.sender._get_piece_data(recipient_id, 0)
-        self.assertEqual(piece, b"piece0")
+            # Set up a transfer
+            recipient_id = "test_recipient"
+            self.sender.active_transfers[recipient_id] = {
+                "filepath": str(filepath),
+                "total_size": 12,
+                "piece_size": 6,
+                "num_pieces": 2,
+            }
 
-        piece = self.sender._get_piece_data(recipient_id, 1)
-        self.assertEqual(piece, b"piece1")
+            piece = self.sender._get_piece_data(recipient_id, 0)
+            self.assertEqual(piece, b"piece0")
 
-        # Invalid index should return None
-        piece = self.sender._get_piece_data(recipient_id, 99)
-        self.assertIsNone(piece)
+            piece = self.sender._get_piece_data(recipient_id, 1)
+            self.assertEqual(piece, b"piece1")
+
+            # Invalid index should return None
+            piece = self.sender._get_piece_data(recipient_id, 99)
+            self.assertIsNone(piece)
 
     def test_start_transfer_file_not_found(self):
         """Test starting transfer with non-existent file."""
@@ -67,7 +78,7 @@ class TestAkitaSender(unittest.TestCase):
 
         # Mock file reading
         mock_file = MagicMock()
-        mock_file.read.side_effect = [b"x" * 1024, b"y" * 1024, b""]
+        mock_file.read.side_effect = [b"x" * 1024, b"y" * 1024, b"x" * 1024, b"y" * 1024]
         mock_open.return_value.__enter__.return_value = mock_file
 
         # Mock sendData

@@ -10,9 +10,6 @@ import logging
 import threading
 from typing import Optional, Dict, Any, List
 
-# Set up module-level logger
-logger = logging.getLogger(__name__)
-
 # Use relative imports within the package
 from .common import (
     AKITA_CONTENT_TYPE,
@@ -25,6 +22,9 @@ from .common import (
     MAX_PIECE_SIZE,
     MIN_PIECE_SIZE,
 )
+
+# Set up module-level logger
+logger = logging.getLogger(__name__)
 
 # Import generated protobuf code using relative path
 # Ensure akita_pb2.py is generated in the 'generated' subdirectory
@@ -142,9 +142,9 @@ class AkitaSender:
             f"({total_size} bytes, {num_pieces} pieces) to {recipient_id}"
         )
 
-        # Memory-efficient: Read file in chunks and calculate hashes
+        # Memory-efficient: Read file in chunks and calculate hashes.
+        # Piece bytes are read again on demand when sending or resending.
         piece_hashes: List[str] = []
-        pieces: List[bytes] = []
 
         try:
             with open(filepath, "rb") as f:
@@ -154,7 +154,6 @@ class AkitaSender:
                         break
                     piece_hash = calculate_hash(piece)
                     piece_hashes.append(piece_hash)
-                    pieces.append(piece)
         except Exception as e:
             logger.error(f"Error reading file {filepath}: {e}")
             return False
@@ -213,7 +212,6 @@ class AkitaSender:
                 "total_size": total_size,
                 "num_pieces": num_pieces,
                 "piece_size": self.piece_size,
-                "pieces": pieces,
                 "piece_hashes": piece_hashes,  # Store hashes for potential resends
                 "merkle_root": merkle_root,
                 "sent_pieces": [False] * num_pieces,  # Track initial send attempt
@@ -246,16 +244,28 @@ class AkitaSender:
         """Safely retrieves piece data for a given transfer and index."""
         with self._lock:
             transfer = self.active_transfers.get(recipient_id)
-            if transfer and 0 <= index < transfer["num_pieces"]:
-                try:
-                    return transfer["pieces"][index]
-                except IndexError:
-                    logger.error(
-                        f"Index {index} out of range for pieces list "
-                        f"(len: {len(transfer.get('pieces', []))}) for {recipient_id}."
-                    )
-                    return None
-        return None
+            if not transfer or not 0 <= index < transfer["num_pieces"]:
+                return None
+            filepath = transfer["filepath"]
+            piece_size = transfer["piece_size"]
+            total_size = transfer["total_size"]
+
+        offset = index * piece_size
+        expected_length = min(piece_size, total_size - offset)
+        try:
+            with open(filepath, "rb") as f:
+                f.seek(offset)
+                data = f.read(expected_length)
+        except OSError as e:
+            logger.error(f"Error reading piece {index} from {filepath}: {e}")
+            return None
+
+        if len(data) != expected_length:
+            logger.error(
+                f"Short read for piece {index} from {filepath}: expected {expected_length}, got {len(data)}."
+            )
+            return None
+        return data
 
     def _send_pieces(self, recipient_id: str, indices_to_send: List[int]):
         """Sends the specified pieces to the recipient with rate limiting."""

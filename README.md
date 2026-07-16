@@ -19,13 +19,13 @@ Akita Supermodem is a Python library implementing a robust file transfer protoco
 * **Protocol Buffers:** Uses checked-in generated Protobuf messages for communication.
 * **Meshtastic Integration:** Designed to work as a module within the Meshtastic ecosystem using a specific PortNum.
 * **Memory Efficient:** Streams outbound files in chunks instead of loading entire files into memory.
+* **Authenticated Encryption Path:** CLI and web UI use the encrypted `TransferManager`; the `uas` profile requires `AKITA_SUPERMODEM_PSK`.
+* **Replay Resistance:** Encrypted packets carry sequence numbers bound into AEAD associated data.
+* **Adaptive Compression:** Compressible pieces are compressed only when doing so reduces radio payload bytes.
 * **Thread Safe:** Full thread-safety support for concurrent transfers.
 * **Error Tracking:** Comprehensive error tracking and failure detection.
 * **Logging:** Professional logging system with configurable log levels.
 * **Security:** Filename sanitization prevents path traversal attacks.
-
-
-
 
 ## Installation
 
@@ -72,11 +72,18 @@ akita-supermodem send ./file.bin --recipient !aabbccdd
 akita-supermodem receive --output-dir received_files
 ```
 
+For UAS/UAV trials, set the same high-entropy PSK on both endpoints:
+```bash
+export AKITA_SUPERMODEM_PSK="replace-with-a-high-entropy-shared-secret"
+akita-supermodem send ./flight-log.bin --recipient !aabbccdd --profile uas
+```
+
 **Core Concepts:**
 
-* **`AkitaSender`**: Initiates and manages outgoing file transfers. Requires a `meshtastic` interface object. Features memory-efficient streaming, error tracking, and thread-safe operation.
-* **`AkitaReceiver`**: Manages incoming transfers, requests missing pieces, and saves files. Requires callbacks for saving data and sending responses. Automatically sanitizes filenames for security.
-* **Callbacks**: Your application needs an `on_receive` callback registered with Meshtastic to route incoming Akita packets (identified by `AKITA_CONTENT_TYPE` PortNum) to the correct `AkitaReceiver` or `AkitaSender` methods.
+* **`TransferManager`**: Secure default API for new integrations. It handles key exchange, encrypted payloads, replay rejection, compression, status reporting, and protocol dispatch.
+* **`SupermodemHandler`**: Implements the active file-transfer protocol: chunking, resume requests, integrity checks, rate control, and adaptive compression.
+* **Profiles**: Network profiles tune piece size, retry behavior, rate limits, encryption, and compression. The `uas` profile requires `AKITA_SUPERMODEM_PSK`.
+* **Legacy APIs**: `AkitaSender` and `AkitaReceiver` remain available for compatibility, but CLI, web UI, and new integrations should use `TransferManager`.
 * **Logging**: The library uses Python's `logging` module. Configure logging in your application:
   ```python
   import logging
@@ -86,7 +93,7 @@ akita-supermodem receive --output-dir received_files
 ## Code Quality
 
 The codebase follows Python best practices with:
-- Comprehensive test coverage (16 tests passing)
+- Comprehensive test coverage (20 tests passing)
 - Linting with flake8 (120 char line limit, PEP 8 compliance)
 - Type hints and documentation
 - Thread-safe implementation
@@ -102,6 +109,8 @@ flake8 akita_supermodem/ examples/ tests/ --max-line-length=120
 
 * [Protocol Details](docs/protocol.md)
 * [Usage Guide](docs/usage.md)
+* [Production Readiness](docs/production_readiness.md)
+* [UAS/UAV Readiness Notes](docs/uas_uav.md)
 * [Code Review Status](CODE_REVIEW_STATUS.md)
 * [Improvements Summary](IMPROVEMENTS_SUMMARY.md)
 * [Change Log](CHANGELOG.md)

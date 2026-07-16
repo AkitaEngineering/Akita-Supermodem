@@ -1,12 +1,12 @@
 import os
 import logging
 import threading
-from typing import Callable, Dict
+from typing import Callable, Dict, Any, Optional
 
 from .crypto import CryptoManager
 from .generated import akita_pb2
 from .common import AKITA_CONTENT_TYPE
-from .config import NetworkProfile, get_profile
+from .config import get_profile
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +22,16 @@ class TransferManager:
         self.mesh = mesh_api
         self.save_function = save_function
         self.profile = get_profile(profile_name)
+        self.pre_shared_key = self._load_pre_shared_key()
+        if self.profile.require_authentication and not self.pre_shared_key:
+            raise ValueError(
+                f"Profile '{self.profile.name}' requires AKITA_SUPERMODEM_PSK for authenticated encryption."
+            )
+        if self.profile.encryption_enabled and not self.pre_shared_key:
+            logger.warning(
+                "Encryption is enabled without AKITA_SUPERMODEM_PSK. "
+                "Payloads are private, but peer identity is not authenticated."
+            )
 
         # Maps session_id -> CryptoManager
         self.sessions: Dict[str, CryptoManager] = {}
@@ -29,11 +39,25 @@ class TransferManager:
         self.handlers: Dict[str, object] = {}
         # Maps node_id -> active session_id
         self.node_sessions: Dict[str, str] = {}
+        # Maps session_id -> peer node_id
+        self.session_peers: Dict[str, str] = {}
+        # Maps session_id -> next outbound encrypted message sequence
+        self.send_sequences: Dict[str, int] = {}
+        # Maps session_id -> received encrypted message sequences for replay rejection
+        self.received_sequences: Dict[str, set[int]] = {}
+        # Maps session_id -> machine-readable failure reason
+        self.session_errors: Dict[str, str] = {}
 
         self._lock = threading.Lock()
 
     def _generate_session_id(self) -> str:
         return os.urandom(8).hex()
+
+    def _load_pre_shared_key(self) -> Optional[bytes]:
+        raw = os.environ.get("AKITA_SUPERMODEM_PSK", "").strip()
+        if not raw:
+            return None
+        return raw.encode("utf-8")
 
     def start_transfer(
         self,
@@ -46,11 +70,20 @@ class TransferManager:
             raise ValueError("Only the Supermodem protocol is production-supported in this release.")
 
         session_id = self._generate_session_id()
-        crypto = CryptoManager(self.profile.encryption_enabled)
+        crypto = CryptoManager(self.profile.encryption_enabled, self.pre_shared_key)
 
         with self._lock:
             self.sessions[session_id] = crypto
             self.node_sessions[recipient_id] = session_id
+            self.session_peers[session_id] = recipient_id
+            self.send_sequences[session_id] = 0
+            self.received_sequences[session_id] = set()
+            self.handlers[session_id] = {
+                "state": "WAITING_FOR_PEER_KEY",
+                "filepath": filepath,
+                "protocol": protocol,
+                "recipient_id": recipient_id,
+            }
 
         # Send KeyExchange
         kx = akita_pb2.KeyExchange(
@@ -69,16 +102,7 @@ class TransferManager:
             payload=msg.SerializeToString(),
             portNum=AKITA_CONTENT_TYPE,
         )
-
-        # We cannot start the transfer until the peer responds with their public key.
-        # We need to store the transfer intent to execute once the handshake completes.
-        with self._lock:
-            self.handlers[session_id] = {
-                "state": "WAITING_FOR_PEER_KEY",
-                "filepath": filepath,
-                "protocol": protocol,
-                "recipient_id": recipient_id,
-            }
+        return session_id
 
     def handle_incoming_message(
         self, sender_id: str, payload: bytes, is_broadcast: bool = False
@@ -113,20 +137,29 @@ class TransferManager:
 
         if crypto and intent and intent.get("state") == "WAITING_FOR_PEER_KEY":
             # We initiated this, and peer responded with their key
-            if crypto.derive_shared_key(kx.public_key):
+            if crypto.derive_shared_key(kx.public_key, session_id):
                 logger.info(f"Handshake complete with {sender_id}. Starting transfer.")
                 self._instantiate_handler_and_start(
                     session_id, sender_id, intent["protocol"], intent["filepath"]
                 )
             else:
+                self.session_errors[session_id] = "key_derivation_failed"
                 logger.error("Failed to derive shared key.")
         else:
             # Peer is initiating a new transfer to us
-            crypto = CryptoManager(self.profile.encryption_enabled)
-            if crypto.derive_shared_key(kx.public_key):
+            crypto = CryptoManager(self.profile.encryption_enabled, self.pre_shared_key)
+            if crypto.derive_shared_key(kx.public_key, session_id):
                 with self._lock:
                     self.sessions[session_id] = crypto
                     self.node_sessions[sender_id] = session_id
+                    self.session_peers[session_id] = sender_id
+                    self.send_sequences[session_id] = 0
+                    self.received_sequences[session_id] = set()
+
+                # Install the receive handler before replying. A fast peer or
+                # in-process transport can send encrypted FileStart immediately
+                # after receiving our key.
+                self._instantiate_handler(session_id, sender_id, kx.protocol)
 
                 # Reply with our public key
                 reply_kx = akita_pb2.KeyExchange(
@@ -142,10 +175,8 @@ class TransferManager:
                     payload=msg.SerializeToString(),
                     portNum=AKITA_CONTENT_TYPE,
                 )
-
-                # Instantiate receiver handler
-                self._instantiate_handler(session_id, sender_id, kx.protocol)
             else:
+                self.session_errors[session_id] = "key_derivation_failed"
                 logger.error("Failed to derive shared key for incoming connection.")
 
     def _instantiate_handler(
@@ -157,9 +188,16 @@ class TransferManager:
 
         # Function to send encrypted data
         def send_encrypted(inner_msg: akita_pb2.InnerMessage):
-            nonce, ciphertext = crypto.encrypt(inner_msg.SerializeToString())
+            with self._lock:
+                sequence = self.send_sequences.get(session_id, 0)
+                self.send_sequences[session_id] = sequence + 1
+            associated_data = self._associated_data(session_id, sequence)
+            nonce, ciphertext = crypto.encrypt(inner_msg.SerializeToString(), associated_data)
             enc_payload = akita_pb2.EncryptedPayload(
-                session_id=session_id, nonce=nonce, ciphertext=ciphertext
+                session_id=session_id,
+                nonce=nonce,
+                ciphertext=ciphertext,
+                sequence=sequence,
             )
             out_msg = akita_pb2.AkitaMessage()
             out_msg.encrypted_payload.CopyFrom(enc_payload)
@@ -185,7 +223,8 @@ class TransferManager:
     ):
         handler = self._instantiate_handler(session_id, peer_id, protocol)
         if handler:
-            handler.start_transfer(filepath)
+            if not handler.start_transfer(filepath):
+                self.session_errors[session_id] = handler.last_error or "transfer_start_failed"
 
     def _handle_encrypted_payload(
         self, sender_id: str, payload: akita_pb2.EncryptedPayload
@@ -194,18 +233,27 @@ class TransferManager:
         with self._lock:
             crypto = self.sessions.get(session_id)
             handler = self.handlers.get(session_id)
+            received_sequences = self.received_sequences.setdefault(session_id, set())
 
         if not crypto or not handler:
             logger.error(f"Received encrypted payload for unknown session {session_id}")
             return
 
+        if payload.sequence in received_sequences:
+            logger.warning(f"Rejected replayed encrypted payload for session {session_id} sequence {payload.sequence}")
+            return
+
         try:
-            decrypted_bytes = crypto.decrypt(payload.nonce, payload.ciphertext)
+            associated_data = self._associated_data(session_id, payload.sequence)
+            decrypted_bytes = crypto.decrypt(payload.nonce, payload.ciphertext, associated_data)
             inner_msg = akita_pb2.InnerMessage()
             inner_msg.ParseFromString(decrypted_bytes)
+            with self._lock:
+                self.received_sequences.setdefault(session_id, set()).add(payload.sequence)
             # Pass to specific handler
             handler.handle_message(inner_msg)
         except Exception as e:
+            self.session_errors[session_id] = "decrypt_or_parse_failed"
             logger.error(f"Decryption or parsing failed: {e}")
 
     def check_timeouts(self):
@@ -214,3 +262,43 @@ class TransferManager:
         for handler in handlers_to_check:
             if hasattr(handler, "check_timeouts") and callable(handler.check_timeouts):
                 handler.check_timeouts()
+
+    def get_status(self) -> list[Dict[str, Any]]:
+        with self._lock:
+            items = list(self.handlers.items())
+
+        statuses: list[Dict[str, Any]] = []
+        for session_id, handler in items:
+            peer = self.session_peers.get(session_id)
+            if isinstance(handler, dict):
+                error = self.session_errors.get(session_id)
+                statuses.append(
+                    {
+                        "session_id": session_id,
+                        "peer": peer or handler.get("recipient_id"),
+                        "direction": "send",
+                        "filename": os.path.basename(handler.get("filepath", "")),
+                        "state": "failed" if error else handler.get("state", "pending"),
+                        "complete": False,
+                        "failed": bool(error),
+                        "error": error,
+                        "authenticated": bool(self.pre_shared_key),
+                        "encrypted": self.profile.encryption_enabled,
+                    }
+                )
+            elif hasattr(handler, "get_status") and callable(handler.get_status):
+                status = handler.get_status()
+                error = self.session_errors.get(session_id)
+                if error:
+                    status["state"] = "failed"
+                    status["failed"] = True
+                    status["error"] = error
+                status["session_id"] = session_id
+                status["peer"] = peer
+                status["authenticated"] = bool(self.pre_shared_key)
+                status["encrypted"] = self.profile.encryption_enabled
+                statuses.append(status)
+        return statuses
+
+    def _associated_data(self, session_id: str, sequence: int) -> bytes:
+        return b"akita-supermodem-v2|" + session_id.encode("utf-8") + b"|" + sequence.to_bytes(8, "big")

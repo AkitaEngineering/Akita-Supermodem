@@ -36,6 +36,10 @@ message PieceData {
   uint32 piece_index = 1;
   // The raw bytes of the file piece.
   bytes data = 2;
+  // True when data is zlib-compressed.
+  bool compressed = 3;
+  // Original uncompressed piece size.
+  uint32 original_size = 4;
 }
 
 // Message sent by the receiver to the sender to request missing pieces
@@ -66,6 +70,7 @@ message EncryptedPayload {
   string session_id = 1;
   bytes nonce = 2;
   bytes ciphertext = 3;
+  uint64 sequence = 4;
 }
 
 // Wrapper message containing one of the specific Akita message types.
@@ -93,7 +98,27 @@ A wrapper message containing one of the specific payloads below. All Akita commu
 
 ## PieceData
 - Sent by the Sender to transmit a chunk of the file.
-- Contains the zero-based `piece_index` and the raw data bytes for that piece.
+- Contains the zero-based `piece_index` and piece bytes.
+- If `compressed` is true, `data` is zlib-compressed and `original_size` records the uncompressed size.
+
+## EncryptedPayload
+- Carries encrypted `InnerMessage` bytes.
+- `sequence` is included in AEAD associated data with the session ID.
+- Receivers reject duplicate encrypted sequence numbers for the same session.
+
+## Key Derivation And Authentication
+- Peers exchange ephemeral X25519 public keys in `KeyExchange`.
+- Session keys are derived with HKDF-SHA256 from the X25519 shared secret.
+- When configured, `AKITA_SUPERMODEM_PSK` is used as the HKDF salt to bind the
+  session to a shared trust anchor.
+- HKDF info includes the protocol label, session ID, and both public keys.
+- The `uas` profile requires a PSK; other profiles warn when encryption is used
+  without one.
+
+## Compression
+- Senders compress a piece only when the compressed form is smaller than the original.
+- Receivers decompress with a bounded expected output size before length and hash verification.
+- Integrity checks are still calculated over the original uncompressed bytes.
 
 ## ResumeRequest
 - Sent by the Receiver to the Sender.

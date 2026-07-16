@@ -14,11 +14,9 @@ from akita_supermodem.common import (
     sanitize_filename,
 )
 from akita_supermodem.config import get_profile
-from akita_supermodem.generated import akita_pb2
-from akita_supermodem.receiver import AkitaReceiver
-from akita_supermodem.sender import AkitaSender
 from akita_supermodem.settings import settings  # noqa: E402
 from akita_supermodem.server import start_server  # noqa: E402
+from akita_supermodem.transfer_manager import TransferManager
 
 logger = logging.getLogger(__name__)
 
@@ -53,39 +51,35 @@ def send(filepath, recipient, profile, port, piece_size, timeout):
         raise click.ClickException(f"piece-size must be between {MIN_PIECE_SIZE} and {MAX_PIECE_SIZE} bytes.")
 
     interface = _connect_mesh(port)
-    sender = AkitaSender(
-        mesh_api=interface,
-        piece_size=piece_size or prof.piece_size or DEFAULT_PIECE_SIZE,
-        initial_delay=prof.initial_delay,
-        max_delay=prof.max_delay,
-    )
+    manager = TransferManager(interface, save_function=lambda _name, _data: None, profile_name=prof.name)
+    manager.profile.piece_size = piece_size or prof.piece_size or DEFAULT_PIECE_SIZE
 
     def on_receive(packet, _interface):
         payload = packet.get("decoded", {}).get("payload")
         portnum = packet.get("decoded", {}).get("portnum")
         if not payload or portnum != AKITA_CONTENT_TYPE:
             return
-        msg = akita_pb2.AkitaMessage()
-        msg.ParseFromString(payload)
         sender_id = packet.get("fromId") or packet.get("from")
-        if sender_id and msg.HasField("resume_request"):
-            sender.handle_resume_request(sender_id, msg.resume_request)
+        if sender_id:
+            manager.handle_incoming_message(sender_id, payload)
 
     try:
         interface.add_on_receive(on_receive)
-        if not sender.start_transfer(rec, filepath):
-            raise click.ClickException("Transfer could not be started.")
+        manager.start_transfer(rec, filepath)
         click.echo(f"Transfer started: {Path(filepath).name} -> {rec}")
         started = time.time()
         while time.time() - started < timeout:
-            state = sender.active_transfers.get(rec)
-            if state and state.get("transfer_complete"):
+            manager.check_timeouts()
+            states = manager.get_status()
+            failed = next((state for state in states if state.get("failed")), None)
+            if failed:
+                raise click.ClickException(f"Transfer failed: {failed.get('error') or 'unknown error'}")
+            if any(state.get("direction") == "send" and state.get("complete") for state in states):
                 click.echo("Transfer acknowledged as complete.")
                 return
             time.sleep(1)
         raise click.ClickException(f"Transfer was not acknowledged within {timeout:.0f} seconds.")
     finally:
-        sender.cleanup_transfer(rec)
         interface.close()
 
 
@@ -109,41 +103,31 @@ def receive(port, output_dir, timeout, retries, interval):
         while target.exists():
             target = output_path / f"{base}_{counter}{ext}"
             counter += 1
-        target.write_bytes(data)
+        temp_target = target.with_name(f".{target.name}.part")
+        temp_target.write_bytes(data)
+        os.replace(temp_target, target)
         click.echo(f"Saved {target} ({len(data)} bytes)")
 
-    def send_data(node_id: str, payload: bytes, port_num: int):
-        interface.sendData(destinationId=node_id, payload=payload, portNum=port_num)
-
-    receiver = AkitaReceiver(
-        save_function=save_file,
-        send_function=send_data,
-        initial_timeout=timeout,
-        max_retries=retries,
-        request_interval=interval,
-    )
+    profile_name = settings.get("default_profile")
+    manager = TransferManager(interface, save_function=save_file, profile_name=profile_name)
+    manager.profile.timeout = interval
+    manager.profile.max_retries = retries
 
     def on_receive(packet, _interface):
         payload = packet.get("decoded", {}).get("payload")
         portnum = packet.get("decoded", {}).get("portnum")
         if not payload or portnum != AKITA_CONTENT_TYPE:
             return
-        msg = akita_pb2.AkitaMessage()
-        msg.ParseFromString(payload)
         sender_id = packet.get("fromId") or packet.get("from")
         if not sender_id:
             return
-        is_broadcast = packet.get("to") == getattr(_interface, "BROADCAST_ADDR", None)
-        if msg.HasField("file_start"):
-            receiver.handle_file_start(sender_id, msg.file_start, is_broadcast)
-        elif msg.HasField("piece_data"):
-            receiver.handle_piece_data(sender_id, msg.piece_data, is_broadcast)
+        manager.handle_incoming_message(sender_id, payload)
 
     try:
         interface.add_on_receive(on_receive)
         click.echo(f"Receiving Akita transfers into {output_path.resolve()}")
         while True:
-            receiver.check_all_transfers_for_timeouts()
+            manager.check_timeouts()
             time.sleep(5)
     except KeyboardInterrupt:
         click.echo("Receiver stopped.")

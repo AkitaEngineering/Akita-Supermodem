@@ -39,9 +39,32 @@ All notable changes to Akita Supermodem will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Secure `TransferManager` path for CLI and web UI transfers
+- `uas` network profile requiring `AKITA_SUPERMODEM_PSK`
+- PSK-bound X25519/HKDF session key derivation
+- ChaCha20-Poly1305 associated data binding for session IDs and encrypted payload sequence numbers
+- Replay rejection for duplicate encrypted payload sequence numbers
+- Adaptive per-piece compression with bounded decompression on receive
+- Fake-mesh integration tests for encrypted transfer, replay rejection, wrong PSK handling, and compression
+- Production readiness checklist
+- UAS/UAV readiness notes
+- `.flake8` configuration excluding checked-in generated protobuf code
+
+### Changed
+- CLI and web UI now route packets through `TransferManager` instead of the legacy plaintext sender/receiver path
+- Legacy sender reads pieces on demand instead of retaining all piece bytes in memory
+- Receiver save paths publish verified files through atomic `.part` renames
+- Documentation now presents `TransferManager` as the default integration API
+
+### Security
+- Encrypted sessions derive keys from X25519 shared secret, optional PSK, session ID, and both public keys
+- The `uas` profile refuses to start without `AKITA_SUPERMODEM_PSK`
+- Decryption and key failures surface as failed session status
+
 ### Planned
-- Progress callback mechanism for UI integration
-- Configuration file support
-- Performance metrics and transfer speed tracking
-- Integration tests for end-to-end scenarios
+- Hardware-in-the-loop test scripts for target radios
+- Receiver-side streaming assembly for very large payloads
+- Structured progress callbacks and event logs
+- Transport MTU validation per radio/profile
 

@@ -26,6 +26,8 @@ message EncryptedPayload {
   bytes nonce = 2;
   // ChaCha20-Poly1305 output (includes 16-byte MAC)
   bytes ciphertext = 3; 
+  // Monotonic sender-side sequence number bound into AEAD associated data.
+  uint64 sequence = 4;
 }
 
 // Message sent by the sender to initiate a file transfer.
@@ -41,6 +43,8 @@ message FileStart {
 message PieceData {
   uint32 piece_index = 1;
   bytes data = 2;
+  bool compressed = 3;
+  uint32 original_size = 4;
 }
 
 // Message sent by the receiver to the sender to request missing pieces

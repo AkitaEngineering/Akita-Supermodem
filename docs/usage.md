@@ -1,6 +1,6 @@
 # Akita Supermodem Usage Guide
 
-Akita Supermodem ships two production entry points:
+Akita Supermodem ships two supported operator entry points:
 
 - `akita-supermodem send` and `akita-supermodem receive` for terminal workflows.
 - `akita-supermodem ui` for the FastAPI web dashboard.
@@ -32,9 +32,16 @@ akita-supermodem receive --output-dir received_files
 Useful options:
 
 - `--port /dev/ttyUSB0` selects a Meshtastic serial device. Without it, Meshtastic auto-detection is used.
-- `--profile meshtastic|lora|bluetooth|wifi` applies the configured packet size and timing profile.
+- `--profile meshtastic|lora|bluetooth|wifi|uas` applies the configured packet size and timing profile.
 - `--piece-size 128` overrides the selected profile's piece size for a send.
 - `--timeout 300` controls how long the sender waits for completion acknowledgement.
+
+For UAS/UAV trials, set a shared PSK on both endpoints and use the `uas` profile:
+
+```bash
+export AKITA_SUPERMODEM_PSK="replace-with-a-high-entropy-shared-secret"
+akita-supermodem send ./flight-log.bin --recipient !aabbccdd --profile uas
+```
 
 ## Web UI
 
@@ -53,16 +60,28 @@ Open `http://127.0.0.1:8080` by default. The UI can:
 
 ## Python Integration
 
-For direct integration, create an `AkitaSender` for outbound transfers and an `AkitaReceiver` for inbound transfers. Route Meshtastic packets with `AKITA_CONTENT_TYPE` to the appropriate handler:
+For new integrations, use `TransferManager`. It is the same encrypted path used
+by the CLI and web UI.
 
 ```python
-from akita_supermodem.common import AKITA_CONTENT_TYPE
-from akita_supermodem.generated import akita_pb2
-from akita_supermodem.receiver import AkitaReceiver
-from akita_supermodem.sender import AkitaSender
+import os
 
-sender = AkitaSender(mesh_api=mesh_interface)
-receiver = AkitaReceiver(save_function=save_file, send_function=send_data)
+from akita_supermodem.common import AKITA_CONTENT_TYPE
+from akita_supermodem.transfer_manager import TransferManager
+
+os.environ["AKITA_SUPERMODEM_PSK"] = "replace-with-a-high-entropy-shared-secret"
+
+
+def save_file(filename: str, data: bytes) -> None:
+    with open(filename, "wb") as f:
+        f.write(data)
+
+
+manager = TransferManager(
+    mesh_api=mesh_interface,
+    save_function=save_file,
+    profile_name="uas",
+)
 
 
 def on_receive(packet, interface):
@@ -71,18 +90,17 @@ def on_receive(packet, interface):
     if not payload or portnum != AKITA_CONTENT_TYPE:
         return
 
-    message = akita_pb2.AkitaMessage()
-    message.ParseFromString(payload)
     sender_id = packet.get("fromId") or packet.get("from")
-    is_broadcast = False
+    if sender_id:
+        manager.handle_incoming_message(sender_id, payload)
 
-    if message.HasField("file_start"):
-        receiver.handle_file_start(sender_id, message.file_start, is_broadcast)
-    elif message.HasField("piece_data"):
-        receiver.handle_piece_data(sender_id, message.piece_data, is_broadcast)
-    elif message.HasField("resume_request"):
-        sender.handle_resume_request(sender_id, message.resume_request)
+
+mesh_interface.add_on_receive(on_receive)
+manager.start_transfer("!aabbccdd", "./flight-log.bin")
 ```
+
+For long-running applications, call `manager.check_timeouts()` periodically and
+surface `manager.get_status()` in your operator UI.
 
 Configure logging in the host application:
 
@@ -94,7 +112,13 @@ logging.basicConfig(level=logging.INFO)
 
 ## Security And Reliability
 
+- CLI and web UI transfers use the encrypted `TransferManager` path.
+- The `uas` profile requires `AKITA_SUPERMODEM_PSK` so the X25519 session is bound to a shared trust anchor.
+- Session keys are derived from X25519, the PSK when configured, the session ID, and both public keys.
+- Encrypted payloads include sequence numbers that are authenticated and rejected on replay.
+- Compressible file pieces are compressed only when the compressed bytes are smaller than the original piece.
 - Filenames are sanitized before saving to prevent path traversal.
+- Completed files are written through temporary `.part` files and atomically renamed into place.
 - Piece hashes and Merkle roots are verified before assembly.
 - Missing or corrupt pieces are requested again until retry limits are reached.
 - Sender state is protected by locks for concurrent callback access.

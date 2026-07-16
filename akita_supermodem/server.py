@@ -11,10 +11,8 @@ from pydantic import BaseModel
 import uvicorn
 
 from .common import AKITA_CONTENT_TYPE, MAX_PIECE_SIZE, MIN_PIECE_SIZE, sanitize_filename
-from .generated import akita_pb2
-from .receiver import AkitaReceiver
-from .sender import AkitaSender
 from .settings import settings
+from .transfer_manager import TransferManager
 
 app = FastAPI(title="Akita Supermodem UI")
 logger = logging.getLogger(__name__)
@@ -40,8 +38,7 @@ class TransferSendRequest(BaseModel):
 class RuntimeState:
     def __init__(self):
         self.mesh = None
-        self.sender: Optional[AkitaSender] = None
-        self.receiver: Optional[AkitaReceiver] = None
+        self.manager: Optional[TransferManager] = None
         self.device: Optional[str] = None
         self._lock = threading.RLock()
 
@@ -62,18 +59,16 @@ class RuntimeState:
                     else meshtastic.serial_interface.SerialInterface()
                 )
                 self.device = device or "auto"
-                self.sender = AkitaSender(mesh_api=self.mesh)
-                self.receiver = AkitaReceiver(
+                self.manager = TransferManager(
+                    self.mesh,
                     save_function=self._save_received_file,
-                    send_function=self._send_data,
-                    request_interval=10.0,
+                    profile_name=settings.get("default_profile"),
                 )
                 self.mesh.add_on_receive(self._on_receive)
                 return {"connected": True, "device": self.device}
             except Exception as e:
                 self.mesh = None
-                self.sender = None
-                self.receiver = None
+                self.manager = None
                 self.device = None
                 raise HTTPException(status_code=503, detail=f"Unable to connect to Meshtastic device: {e}") from e
 
@@ -85,14 +80,13 @@ class RuntimeState:
                 except Exception as e:
                     logger.warning(f"Error while closing Meshtastic interface: {e}")
             self.mesh = None
-            self.sender = None
-            self.receiver = None
+            self.manager = None
             self.device = None
         return {"connected": False}
 
     def start_transfer(self, request: TransferSendRequest) -> Dict[str, Any]:
         with self._lock:
-            if self.mesh is None or self.sender is None:
+            if self.mesh is None or self.manager is None:
                 raise HTTPException(status_code=409, detail="Mesh interface is not connected.")
             recipient_id = request.recipient_id or settings.get("default_mesh_node")
             if not recipient_id:
@@ -106,48 +100,23 @@ class RuntimeState:
                         status_code=400,
                         detail=f"piece_size must be between {MIN_PIECE_SIZE} and {MAX_PIECE_SIZE} bytes.",
                     )
-                self.sender.piece_size = request.piece_size
+                self.manager.profile.piece_size = request.piece_size
 
-            if not self.sender.start_transfer(recipient_id, str(filepath)):
-                raise HTTPException(status_code=500, detail="Transfer could not be started.")
-            return {"status": "started", "recipient_id": recipient_id, "filepath": str(filepath)}
+            session_id = self.manager.start_transfer(recipient_id, str(filepath))
+            return {
+                "status": "started",
+                "session_id": session_id,
+                "recipient_id": recipient_id,
+                "filepath": str(filepath),
+            }
 
     def status(self) -> Dict[str, Any]:
         with self._lock:
-            transfers = []
-            if self.sender is not None:
-                for recipient_id, transfer in self.sender.active_transfers.items():
-                    sent = sum(1 for value in transfer.get("sent_pieces", []) if value)
-                    acked = sum(1 for value in transfer.get("acknowledged_pieces", []) if value)
-                    transfers.append(
-                        {
-                            "direction": "send",
-                            "peer": recipient_id,
-                            "filename": transfer.get("filename"),
-                            "total_size": transfer.get("total_size", 0),
-                            "piece_size": transfer.get("piece_size", 0),
-                            "num_pieces": transfer.get("num_pieces", 0),
-                            "sent_pieces": sent,
-                            "acknowledged_pieces": acked,
-                            "complete": bool(transfer.get("transfer_complete")),
-                        }
-                    )
-            if self.receiver is not None:
-                for transfer_id, transfer in self.receiver.active_transfers.items():
-                    received = len(transfer.get("received_pieces", {}))
-                    transfers.append(
-                        {
-                            "direction": "receive",
-                            "peer": transfer.get("source_node", transfer_id),
-                            "filename": transfer.get("filename"),
-                            "total_size": transfer.get("total_size", 0),
-                            "piece_size": transfer.get("piece_size", 0),
-                            "num_pieces": transfer.get("num_pieces", 0),
-                            "received_pieces": received,
-                            "complete": bool(transfer.get("transfer_complete")),
-                            "failed": bool(transfer.get("failed")),
-                        }
-                    )
+            if self.manager is not None:
+                self.manager.check_timeouts()
+                transfers = self.manager.get_status()
+            else:
+                transfers = []
             return {
                 "mesh": {"connected": self.mesh is not None, "device": self.device},
                 "transfers": transfers,
@@ -163,13 +132,9 @@ class RuntimeState:
         while filepath.exists():
             filepath = save_dir / f"{base}_{counter}{ext}"
             counter += 1
-        filepath.write_bytes(data)
-
-    def _send_data(self, node_id: str, payload: bytes, port_num: int) -> None:
-        with self._lock:
-            if self.mesh is None:
-                raise RuntimeError("Mesh interface is not connected.")
-            self.mesh.sendData(destinationId=node_id, payload=payload, portNum=port_num)
+        temp_filepath = filepath.with_name(f".{filepath.name}.part")
+        temp_filepath.write_bytes(data)
+        os.replace(temp_filepath, filepath)
 
     def _on_receive(self, packet, interface) -> None:
         payload = packet.get("decoded", {}).get("payload")
@@ -178,24 +143,16 @@ class RuntimeState:
             return
 
         try:
-            msg = akita_pb2.AkitaMessage()
-            msg.ParseFromString(payload)
             sender_id = packet.get("fromId") or packet.get("from")
             if not sender_id:
                 logger.warning("Ignoring Akita packet without sender id.")
                 return
-            is_broadcast = packet.get("to") == getattr(interface, "BROADCAST_ADDR", None)
 
             with self._lock:
-                receiver = self.receiver
-                sender = self.sender
+                manager = self.manager
 
-            if msg.HasField("file_start") and receiver:
-                receiver.handle_file_start(sender_id, msg.file_start, is_broadcast)
-            elif msg.HasField("piece_data") and receiver:
-                receiver.handle_piece_data(sender_id, msg.piece_data, is_broadcast)
-            elif msg.HasField("resume_request") and sender:
-                sender.handle_resume_request(sender_id, msg.resume_request)
+            if manager:
+                manager.handle_incoming_message(sender_id, payload)
         except Exception as e:
             logger.error(f"Error processing incoming Akita packet: {e}")
 

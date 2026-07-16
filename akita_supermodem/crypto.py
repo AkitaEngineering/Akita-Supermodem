@@ -1,8 +1,10 @@
 import os
 import logging
+from typing import Optional
 from cryptography.hazmat.primitives.asymmetric import x25519
-from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 logger = logging.getLogger(__name__)
 
@@ -13,8 +15,9 @@ class CryptoManager:
     Uses X25519 for ECDH key exchange and ChaCha20-Poly1305 for AEAD.
     """
 
-    def __init__(self, encryption_enabled: bool = True):
+    def __init__(self, encryption_enabled: bool = True, pre_shared_key: Optional[bytes] = None):
         self.encryption_enabled = encryption_enabled
+        self.pre_shared_key = pre_shared_key
         if self.encryption_enabled:
             # Generate our ephemeral X25519 keypair for a session
             self._private_key = x25519.X25519PrivateKey.generate()
@@ -22,7 +25,7 @@ class CryptoManager:
         else:
             self._private_key = None
             self._public_key = None
-            
+
         self._shared_key = None
         self._chacha = None
 
@@ -30,19 +33,19 @@ class CryptoManager:
         """Returns the public key in raw bytes format (32 bytes)."""
         if not self.encryption_enabled:
             return b'\x00' * 32
-            
+
         return self._public_key.public_bytes(
             encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
         )
 
-    def derive_shared_key(self, peer_public_key_bytes: bytes) -> bool:
+    def derive_shared_key(self, peer_public_key_bytes: bytes, session_id: str = "") -> bool:
         """
         Derives the shared secret from the peer's raw public key bytes.
         """
         if not self.encryption_enabled:
             self._shared_key = b'\x00' * 32
             return True
-            
+
         if len(peer_public_key_bytes) != 32:
             logger.error("Invalid peer public key length. Must be 32 bytes.")
             return False
@@ -51,8 +54,21 @@ class CryptoManager:
             peer_public_key = x25519.X25519PublicKey.from_public_bytes(
                 peer_public_key_bytes
             )
-            # The shared key derived from X25519 is 32 bytes, perfect for ChaCha20-Poly1305
-            self._shared_key = self._private_key.exchange(peer_public_key)
+            local_public_key_bytes = self.get_public_key_bytes()
+            transcript_keys = sorted([local_public_key_bytes, peer_public_key_bytes])
+            shared_secret = self._private_key.exchange(peer_public_key)
+            self._shared_key = HKDF(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=self.pre_shared_key,
+                info=(
+                    b"akita-supermodem-v2|"
+                    + session_id.encode("utf-8")
+                    + b"|"
+                    + transcript_keys[0]
+                    + transcript_keys[1]
+                ),
+            ).derive(shared_secret)
             self._chacha = ChaCha20Poly1305(self._shared_key)
             logger.debug("Successfully derived shared key and initialized cipher.")
             return True
@@ -66,7 +82,7 @@ class CryptoManager:
             return self._shared_key is not None
         return self._chacha is not None
 
-    def encrypt(self, data: bytes) -> tuple[bytes, bytes]:
+    def encrypt(self, data: bytes, associated_data: bytes | None = None) -> tuple[bytes, bytes]:
         """
         Encrypts data using ChaCha20-Poly1305.
 
@@ -83,12 +99,10 @@ class CryptoManager:
 
         # ChaCha20-Poly1305 requires a 12-byte nonce
         nonce = os.urandom(12)
-        # encrypt(nonce, data, associated_data)
-        # associated_data is None here, but could be used to bind the packet to the session
-        ciphertext = self._chacha.encrypt(nonce, data, None)
+        ciphertext = self._chacha.encrypt(nonce, data, associated_data)
         return nonce, ciphertext
 
-    def decrypt(self, nonce: bytes, ciphertext: bytes) -> bytes:
+    def decrypt(self, nonce: bytes, ciphertext: bytes, associated_data: bytes | None = None) -> bytes:
         """
         Decrypts data using ChaCha20-Poly1305 and verifies its MAC.
 
@@ -109,4 +123,4 @@ class CryptoManager:
             raise ValueError(f"Invalid nonce length. Expected 12, got {len(nonce)}")
 
         # This will raise InvalidTag if the data was tampered with
-        return self._chacha.decrypt(nonce, ciphertext, None)
+        return self._chacha.decrypt(nonce, ciphertext, associated_data)

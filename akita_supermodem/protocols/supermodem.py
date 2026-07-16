@@ -2,6 +2,7 @@ import os
 import time
 import logging
 import threading
+import zlib
 from typing import Callable, Dict, Any, List
 
 from .base import BaseProtocolHandler
@@ -43,20 +44,24 @@ class SupermodemHandler(BaseProtocolHandler):
         self.retry_threshold = self.profile.max_retries
         self.request_interval = self.profile.timeout
         self.last_request_time = 0.0
+        self.last_error = None
 
         self._lock = threading.Lock()
 
     def start_transfer(self, filepath: str) -> bool:
         if not os.path.exists(filepath):
             logger.error(f"File not found: {filepath}")
+            self.last_error = "file_not_found"
             return False
         if not os.path.isfile(filepath):
             logger.error(f"Path is not a file: {filepath}")
+            self.last_error = "not_a_file"
             return False
 
         total_size = os.path.getsize(filepath)
         if total_size > MAX_FILE_SIZE:
             logger.error(f"File is larger than supported maximum: {total_size} > {MAX_FILE_SIZE}")
+            self.last_error = "file_too_large"
             return False
 
         num_pieces = (
@@ -76,12 +81,14 @@ class SupermodemHandler(BaseProtocolHandler):
                     piece_hashes.append(calculate_hash(piece))
         except Exception as e:
             logger.error(f"Error reading file {filepath}: {e}")
+            self.last_error = "read_error"
             return False
 
         if len(piece_hashes) != num_pieces:
             logger.error(
                 f"Expected {num_pieces} pieces while hashing '{filepath}', got {len(piece_hashes)}."
             )
+            self.last_error = "short_read"
             return False
 
         fs_proto = akita_pb2.FileStart(
@@ -110,6 +117,10 @@ class SupermodemHandler(BaseProtocolHandler):
                 "delay": self.profile.initial_delay,
                 "retry_count": 0,
                 "complete": False,
+                "failed": False,
+                "compressed_pieces": 0,
+                "wire_data_bytes": 0,
+                "plain_data_bytes": 0,
             }
 
         self.send_inner(msg)
@@ -166,9 +177,10 @@ class SupermodemHandler(BaseProtocolHandler):
                 with self._lock:
                     self.transfer_state["complete"] = True
                     self.transfer_state["failed"] = True
+                    self.last_error = "piece_read_error"
                 break
 
-            piece_proto = akita_pb2.PieceData(piece_index=i, data=data)
+            piece_proto = self._build_piece_data(i, data)
             msg = akita_pb2.InnerMessage()
             msg.piece_data.CopyFrom(piece_proto)
 
@@ -176,7 +188,31 @@ class SupermodemHandler(BaseProtocolHandler):
 
             with self._lock:
                 self.transfer_state["sent_pieces"][i] = True
+                self.transfer_state["plain_data_bytes"] += len(data)
+                self.transfer_state["wire_data_bytes"] += len(piece_proto.data)
+                if piece_proto.compressed:
+                    self.transfer_state["compressed_pieces"] += 1
             time.sleep(delay)
+
+    def _build_piece_data(self, index: int, data: bytes) -> akita_pb2.PieceData:
+        if (
+            self.profile.compression_enabled
+            and len(data) >= self.profile.compression_min_bytes
+        ):
+            compressed = zlib.compress(data, self.profile.compression_level)
+            if len(compressed) < len(data):
+                return akita_pb2.PieceData(
+                    piece_index=index,
+                    data=compressed,
+                    compressed=True,
+                    original_size=len(data),
+                )
+        return akita_pb2.PieceData(
+            piece_index=index,
+            data=data,
+            compressed=False,
+            original_size=len(data),
+        )
 
     def handle_message(self, msg: akita_pb2.InnerMessage) -> None:
         if msg.HasField("file_start"):
@@ -193,14 +229,17 @@ class SupermodemHandler(BaseProtocolHandler):
         piece_size = fs.piece_size
         if total_size > MAX_FILE_SIZE:
             logger.error(f"Rejecting transfer above maximum size: {total_size} > {MAX_FILE_SIZE}.")
+            self.last_error = "file_too_large"
             return
         if total_size > 0 and not (MIN_PIECE_SIZE <= piece_size <= MAX_PIECE_SIZE):
             logger.error(f"Rejecting transfer with invalid piece size: {piece_size}.")
+            self.last_error = "invalid_piece_size"
             return
         if total_size == 0 and piece_size == 0:
             piece_size = self.piece_size
         elif total_size > 0 and piece_size == 0:
             logger.error("Rejecting non-empty transfer with zero piece size.")
+            self.last_error = "invalid_piece_size"
             return
 
         num_pieces = (
@@ -213,6 +252,7 @@ class SupermodemHandler(BaseProtocolHandler):
             logger.error(
                 f"Rejecting transfer with {len(piece_hashes)} piece hashes for {num_pieces} pieces."
             )
+            self.last_error = "hash_count_mismatch"
             return
 
         with self._lock:
@@ -250,19 +290,38 @@ class SupermodemHandler(BaseProtocolHandler):
             if index == num_pieces - 1:
                 remainder = self.receive_state["total_size"] % self.receive_state["piece_size"]
                 expected_len = remainder or self.receive_state["piece_size"]
-            if len(piece.data) != expected_len:
+
+            piece_bytes = piece.data
+            if piece.compressed:
+                try:
+                    decompressor = zlib.decompressobj()
+                    piece_bytes = decompressor.decompress(piece.data, expected_len + 1)
+                    if not decompressor.eof or decompressor.unconsumed_tail:
+                        raise zlib.error("compressed piece exceeds expected size")
+                except zlib.error:
+                    logger.warning(f"Rejecting piece {index}: decompression failed.")
+                    request_missing = True
+                    piece_bytes = b""
+                if not request_missing and len(piece_bytes) != piece.original_size:
+                    logger.warning(
+                        f"Rejecting piece {index}: decompressed size expected "
+                        f"{piece.original_size}, got {len(piece_bytes)}."
+                    )
+                    request_missing = True
+
+            if not request_missing and len(piece_bytes) != expected_len:
                 logger.warning(
-                    f"Rejecting piece {index}: expected {expected_len} bytes, got {len(piece.data)}."
+                    f"Rejecting piece {index}: expected {expected_len} bytes, got {len(piece_bytes)}."
                 )
                 request_missing = True
-            else:
-                piece_hash = calculate_hash(piece.data)
+            if not request_missing:
+                piece_hash = calculate_hash(piece_bytes)
                 piece_hashes = self.receive_state.get("piece_hashes", [])
                 if piece_hashes and piece_hash != piece_hashes[index]:
                     logger.warning(f"Rejecting piece {index}: hash mismatch.")
                     request_missing = True
                 else:
-                    self.receive_state["received_pieces"][index] = piece.data
+                    self.receive_state["received_pieces"][index] = piece_bytes
                     self.receive_state["received_hashes"][index] = piece_hash
                     self.receive_state["missing_indices"].discard(index)
 
@@ -374,6 +433,7 @@ class SupermodemHandler(BaseProtocolHandler):
                     f"expected {self.receive_state['total_size']} bytes, got {len(data)}."
                 )
                 self.receive_state["failed"] = True
+                self.last_error = "assembled_size_mismatch"
                 return
             safe_name = sanitize_filename(self.receive_state["filename"])
             self.receive_state["complete"] = True
@@ -416,3 +476,60 @@ class SupermodemHandler(BaseProtocolHandler):
         with self._lock:
             self.transfer_state.clear()
             self.receive_state.clear()
+
+    def get_status(self) -> Dict[str, Any]:
+        with self._lock:
+            if self.transfer_state:
+                num_pieces = self.transfer_state.get("num_pieces", 0)
+                sent = sum(1 for value in self.transfer_state.get("sent_pieces", []) if value)
+                acked = sum(1 for value in self.transfer_state.get("acknowledged_pieces", []) if value)
+                complete = bool(self.transfer_state.get("complete"))
+                failed = bool(self.transfer_state.get("failed"))
+                total_size = self.transfer_state.get("total_size", 0)
+                piece_size = self.piece_size
+                return {
+                    "direction": "send",
+                    "filename": os.path.basename(self.transfer_state.get("filepath", "")),
+                    "state": "failed" if failed else ("complete" if complete else "active"),
+                    "total_size": total_size,
+                    "piece_size": piece_size,
+                    "num_pieces": num_pieces,
+                    "sent_pieces": sent,
+                    "acknowledged_pieces": acked,
+                    "compressed_pieces": self.transfer_state.get("compressed_pieces", 0),
+                    "wire_data_bytes": self.transfer_state.get("wire_data_bytes", 0),
+                    "plain_data_bytes": self.transfer_state.get("plain_data_bytes", 0),
+                    "complete": complete,
+                    "failed": failed,
+                    "error": self.last_error,
+                }
+
+            if self.receive_state:
+                num_pieces = self.receive_state.get("num_pieces", 0)
+                received = len(self.receive_state.get("received_pieces", {}))
+                complete = bool(self.receive_state.get("complete"))
+                failed = bool(self.receive_state.get("failed"))
+                return {
+                    "direction": "receive",
+                    "filename": self.receive_state.get("filename"),
+                    "state": "failed" if failed else ("complete" if complete else "active"),
+                    "total_size": self.receive_state.get("total_size", 0),
+                    "piece_size": self.receive_state.get("piece_size", self.piece_size),
+                    "num_pieces": num_pieces,
+                    "received_pieces": received,
+                    "complete": complete,
+                    "failed": failed,
+                    "error": self.last_error,
+                }
+
+        return {
+            "direction": "idle",
+            "filename": None,
+            "state": "idle",
+            "total_size": 0,
+            "piece_size": self.piece_size,
+            "num_pieces": 0,
+            "complete": False,
+            "failed": False,
+            "error": self.last_error,
+        }

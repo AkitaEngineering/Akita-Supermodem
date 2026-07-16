@@ -9,9 +9,6 @@ import logging
 import threading
 from typing import Callable, Dict, Any, Optional, List, Set
 
-# Set up module-level logger
-logger = logging.getLogger(__name__)
-
 # Use relative imports within the package
 from .common import (
     AKITA_CONTENT_TYPE,
@@ -21,6 +18,9 @@ from .common import (
     sanitize_filename,
     calculate_merkle_root,
 )
+
+# Set up module-level logger
+logger = logging.getLogger(__name__)
 
 # Import generated protobuf code using relative path
 # Ensure akita_pb2.py is generated in the 'generated' subdirectory

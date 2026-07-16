@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict
 
 
@@ -13,6 +13,10 @@ class NetworkProfile:
     timeout: float
     max_retries: int
     encryption_enabled: bool
+    require_authentication: bool = False
+    compression_enabled: bool = False
+    compression_min_bytes: int = 256
+    compression_level: int = 6
 
 
 # Default predefined profiles
@@ -25,6 +29,8 @@ NETWORK_PROFILES: Dict[str, NetworkProfile] = {
         timeout=30.0,
         max_retries=5,
         encryption_enabled=True,  # E2EE strongly enforced
+        compression_enabled=True,
+        compression_min_bytes=96,
     ),
     "lora": NetworkProfile(
         name="lora",
@@ -34,6 +40,8 @@ NETWORK_PROFILES: Dict[str, NetworkProfile] = {
         timeout=15.0,
         max_retries=5,
         encryption_enabled=True,
+        compression_enabled=True,
+        compression_min_bytes=128,
     ),
     "bluetooth": NetworkProfile(
         name="bluetooth",
@@ -43,6 +51,8 @@ NETWORK_PROFILES: Dict[str, NetworkProfile] = {
         timeout=5.0,
         max_retries=3,
         encryption_enabled=True,
+        compression_enabled=True,
+        compression_min_bytes=256,
     ),
     "wifi": NetworkProfile(
         name="wifi",
@@ -52,10 +62,25 @@ NETWORK_PROFILES: Dict[str, NetworkProfile] = {
         timeout=3.0,
         max_retries=3,
         encryption_enabled=True,  # Could be toggled off for raw speed if desired
+        compression_enabled=False,
+    ),
+    "uas": NetworkProfile(
+        name="uas",
+        piece_size=128,
+        initial_delay=2.0,
+        max_delay=10.0,
+        timeout=20.0,
+        max_retries=5,
+        encryption_enabled=True,
+        require_authentication=True,
+        compression_enabled=True,
+        compression_min_bytes=96,
+        compression_level=6,
     ),
 }
 
 
 def get_profile(name: str) -> NetworkProfile:
     """Returns the requested network profile, defaulting to 'meshtastic' if not found."""
-    return NETWORK_PROFILES.get(name.lower(), NETWORK_PROFILES["meshtastic"])
+    profile = NETWORK_PROFILES.get(name.lower(), NETWORK_PROFILES["meshtastic"])
+    return replace(profile)
