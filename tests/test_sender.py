@@ -85,7 +85,7 @@ class TestAkitaSender(unittest.TestCase):
         self.mock_mesh.sendData.return_value = None
 
         result = self.sender.start_transfer("recipient", "test.txt")
-        self.assertIsNotNone(result)  # Should succeed
+        self.assertTrue(result)
 
 
 if __name__ == "__main__":

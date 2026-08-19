@@ -67,6 +67,37 @@ class TestAkitaReceiver(unittest.TestCase):
         self.assertIn(3, missing)
         self.assertIn(4, missing)
 
+    def test_empty_file_start_does_not_deadlock(self):
+        from akita_supermodem.generated import akita_pb2
+
+        file_start = akita_pb2.FileStart(filename="empty.bin", total_size=0, piece_size=0)
+        self.receiver.handle_file_start("!sender", file_start)
+        self.assertEqual(self.receiver.active_transfers, {})
+        self.mock_save.assert_called_once_with("empty.bin", b"")
+
+    def test_duplicate_file_start_does_not_deadlock(self):
+        from akita_supermodem.generated import akita_pb2
+
+        file_start = akita_pb2.FileStart(filename="x.bin", total_size=1024, piece_size=128)
+        self.receiver.handle_file_start("!sender", file_start)
+        self.receiver.handle_file_start("!sender", file_start)
+        self.assertIn("!sender", self.receiver.active_transfers)
+
+    def test_max_retries_cleanup_does_not_deadlock(self):
+        transfer_id = "!sender"
+        self.receiver.max_retries = 1
+        self.receiver.active_transfers[transfer_id] = {
+            "num_pieces": 2,
+            "received_pieces": {},
+            "retry_count": {0: 1, 1: 1},
+            "failed": False,
+            "transfer_complete": False,
+            "filename": "x.bin",
+        }
+        missing = self.receiver._check_for_missing_or_corrupt(transfer_id)
+        self.assertEqual(missing, set())
+        self.assertNotIn(transfer_id, self.receiver.active_transfers)
+
 
 if __name__ == "__main__":
     unittest.main()

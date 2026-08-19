@@ -28,6 +28,8 @@ message FileStart {
   // or for verifying individual pieces upon receipt. The number of hashes should
   // match the calculated number of pieces.
   repeated string piece_hashes = 5;
+  // CRC-32C (Castagnoli) of the entire original file.
+  optional uint32 file_crc32c = 6;
 }
 
 // Message carrying a single piece (chunk) of the file data.
@@ -40,6 +42,8 @@ message PieceData {
   bool compressed = 3;
   // Original uncompressed piece size.
   uint32 original_size = 4;
+  // CRC-32C of the original uncompressed piece bytes.
+  optional uint32 crc32c = 5;
 }
 
 // Message sent by the receiver to the sender to request missing pieces
@@ -100,11 +104,12 @@ A wrapper message containing one of the specific payloads below. All Akita commu
 - Sent by the Sender to transmit a chunk of the file.
 - Contains the zero-based `piece_index` and piece bytes.
 - If `compressed` is true, `data` is zlib-compressed and `original_size` records the uncompressed size.
+- `crc32c` is CRC-32C of the original uncompressed bytes. Receivers reject mismatches immediately, before SHA-256 or Merkle checks.
 
 ## EncryptedPayload
 - Carries encrypted `InnerMessage` bytes.
 - `sequence` is included in AEAD associated data with the session ID.
-- Receivers reject duplicate encrypted sequence numbers for the same session.
+- Receivers reject duplicate or stale encrypted sequence numbers for the same session using a sliding window.
 
 ## Key Derivation And Authentication
 - Peers exchange ephemeral X25519 public keys in `KeyExchange`.
@@ -112,8 +117,9 @@ A wrapper message containing one of the specific payloads below. All Akita commu
 - When configured, `AKITA_SUPERMODEM_PSK` is used as the HKDF salt to bind the
   session to a shared trust anchor.
 - HKDF info includes the protocol label, session ID, and both public keys.
-- The `uas` profile requires a PSK; other profiles warn when encryption is used
-  without one.
+- Every operator profile requires `AKITA_SUPERMODEM_PSK` of at least 16 bytes.
+- Duplicate `KeyExchange` packets for an existing session are ignored or
+  re-answered; they do not replace the live session.
 
 ## Compression
 - Senders compress a piece only when the compressed form is smaller than the original.
@@ -136,7 +142,7 @@ A wrapper message containing one of the specific payloads below. All Akita commu
 ## Initiation (Sender -> Receiver)
 1. Sender reads the file, splits it into pieces, calculates hashes (and optionally Merkle root).
 2. Sender sends an `AkitaMessage` containing a `FileStart` payload to the Receiver.
-3. Sender immediately begins sending `AkitaMessage` packets, each containing a `PieceData` payload, starting from index `0`. A delay is introduced between pieces (`initial_delay`).
+3. Sender starts a worker thread and sends a sliding window of `PieceData` packets. The radio receive callback is not blocked. A profile delay is applied between pieces inside the window.
 
 ## Receiving Pieces (Receiver)
 1. Receiver gets the `FileStart` message and initializes the transfer state (expected size, pieces, hashes, etc.).

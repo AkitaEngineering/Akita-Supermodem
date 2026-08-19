@@ -36,11 +36,27 @@ Useful options:
 - `--piece-size 128` overrides the selected profile's piece size for a send.
 - `--timeout 300` controls how long the sender waits for completion acknowledgement.
 
-For UAS/UAV trials, set a shared PSK on both endpoints and use the `uas` profile:
+Sign and verify a received artifact:
 
 ```bash
-export AKITA_SUPERMODEM_PSK="replace-with-a-high-entropy-shared-secret"
+akita-supermodem keygen --out-dir ./keys
+akita-supermodem sign ./received_files/flight-log.bin --key ./keys/akita_ed25519.key
+akita-supermodem verify ./received_files/flight-log.bin --public-key ./keys/akita_ed25519.pub --signature ./received_files/flight-log.bin.sig
+```
+
+Two radios on one bench computer:
+
+```bash
+akita-supermodem hitl --sender-port /dev/ttyUSB0 --receiver-port /dev/ttyUSB1 --file ./flight-log.bin --profile uas
+```
+
+Set a shared PSK on both endpoints before any transfer. Use the `uas` profile
+for aircraft/ground trials:
+
+```bash
+export AKITA_SUPERMODEM_PSK="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
 akita-supermodem send ./flight-log.bin --recipient !aabbccdd --profile uas
+akita-supermodem receive --output-dir received_files --profile uas
 ```
 
 ## Web UI

@@ -16,6 +16,10 @@ from .common import (
     MIN_PIECE_SIZE,
     MAX_PIECE_SIZE,
     MAX_FILE_SIZE,
+    MIN_PSK_BYTES,
+    crc32c,
+    crc32c_file,
+    publish_file,
     sanitize_filename,
     calculate_hash,
     calculate_merkle_root,
@@ -28,7 +32,7 @@ from .artifact_signing import (
     verify_file,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.2.1"
 
 __all__ = [
     "TransferManager",
@@ -43,6 +47,10 @@ __all__ = [
     "MIN_PIECE_SIZE",
     "MAX_PIECE_SIZE",
     "MAX_FILE_SIZE",
+    "MIN_PSK_BYTES",
+    "crc32c",
+    "crc32c_file",
+    "publish_file",
     "sanitize_filename",
     "calculate_hash",
     "calculate_merkle_root",

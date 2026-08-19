@@ -4,8 +4,8 @@ This runbook covers operational key handling for secure field trials.
 
 ## PSK Requirements
 
-`AKITA_SUPERMODEM_PSK` is required for the `uas` profile. Treat it as a shared
-mission secret.
+`AKITA_SUPERMODEM_PSK` is required for every network profile. Treat it as a
+shared mission secret. The runtime rejects secrets shorter than 16 bytes.
 
 Recommended PSK properties:
 

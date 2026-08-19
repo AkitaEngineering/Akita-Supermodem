@@ -3,7 +3,13 @@ Unit tests for common utilities.
 """
 
 import unittest
-from akita_supermodem.common import calculate_hash, sanitize_filename, calculate_merkle_root
+from akita_supermodem.common import (
+    ReplayGuard,
+    calculate_hash,
+    calculate_merkle_root,
+    crc32c,
+    sanitize_filename,
+)
 
 
 class TestCommon(unittest.TestCase):
@@ -94,6 +100,21 @@ class TestCommon(unittest.TestCase):
         # Test with invalid hex string
         result = calculate_merkle_root(["invalid_hex"])
         self.assertIsNone(result)
+
+    def test_crc32c_known_vector(self):
+        """CRC-32C('123456789') is the Castagnoli check value 0xE3069283."""
+        self.assertEqual(crc32c(b""), 0x00000000)
+        self.assertEqual(crc32c(b"123456789"), 0xE3069283)
+        self.assertNotEqual(crc32c(b"123456789"), crc32c(b"123456780"))
+
+    def test_replay_guard_rejects_duplicates_and_old_sequences(self):
+        guard = ReplayGuard(window=8)
+        self.assertTrue(guard.accept(0))
+        self.assertFalse(guard.accept(0))
+        for sequence in range(1, 12):
+            self.assertTrue(guard.accept(sequence))
+        self.assertFalse(guard.accept(0))
+        self.assertFalse(guard.accept(2))
 
 
 if __name__ == "__main__":

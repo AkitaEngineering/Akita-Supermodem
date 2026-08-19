@@ -24,6 +24,14 @@ Use this checklist when preparing a production or field-trial release.
    python -m flake8 akita_supermodem/ examples/ tests/ --max-line-length=120 --jobs=1
    ```
 
+   Or run the full rehearsal:
+
+   ```bash
+   bash scripts/package_release.sh
+   ```
+
+   Confirm GitHub Actions CI is green on the release commit.
+
 6. Regenerate protobuf only if `akita_supermodem/proto/akita.proto` changed:
 
    ```bash

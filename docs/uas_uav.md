@@ -47,10 +47,11 @@ These items should be complete before calling the UAS/UAV integration
 production-ready:
 
 - Operator entry points use the encrypted `TransferManager` path by default.
-- The `uas` profile requires `AKITA_SUPERMODEM_PSK` so peer sessions are bound
-  to a shared trust anchor.
-- Encrypted payload sequence numbers are authenticated and replayed payloads are
-  rejected.
+- Every profile, including `uas`, requires a 16+ byte `AKITA_SUPERMODEM_PSK` so
+  peer sessions are bound to a shared trust anchor.
+- Encrypted payload sequence numbers are authenticated and replayed or stale
+  payloads are rejected with a sliding window.
+- Pieces and assembled files carry CRC-32C in addition to SHA-256 Merkle checks.
 - Transfer status exposes clear `pending`, `active`, `complete`, `failed`, and
   `aborted` states with machine-readable error reasons.
 - Sender paths avoid whole-file buffering for large payloads.

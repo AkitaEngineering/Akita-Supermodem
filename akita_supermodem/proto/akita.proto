@@ -37,6 +37,8 @@ message FileStart {
   uint32 piece_size = 3;
   optional string merkle_root = 4;
   repeated string piece_hashes = 5;
+  // CRC-32C (Castagnoli) of the entire original file. Stronger than ZMODEM CRC-32.
+  optional uint32 file_crc32c = 6;
 }
 
 // Message carrying a single piece (chunk) of the file data.
@@ -45,6 +47,8 @@ message PieceData {
   bytes data = 2;
   bool compressed = 3;
   uint32 original_size = 4;
+  // CRC-32C of the original uncompressed piece bytes.
+  optional uint32 crc32c = 5;
 }
 
 // Message sent by the receiver to the sender to request missing pieces

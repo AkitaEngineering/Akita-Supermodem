@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import uvicorn
 
-from .common import AKITA_CONTENT_TYPE, MAX_PIECE_SIZE, MIN_PIECE_SIZE, sanitize_filename
+from .common import AKITA_CONTENT_TYPE, MAX_PIECE_SIZE, MIN_PIECE_SIZE, publish_file, sanitize_filename
 from .settings import settings
 from .transfer_manager import TransferManager
 
@@ -59,12 +59,18 @@ class RuntimeState:
                     else meshtastic.serial_interface.SerialInterface()
                 )
                 self.device = device or "auto"
-                self.manager = TransferManager(
-                    self.mesh,
-                    save_function=self._save_received_file,
-                    profile_name=settings.get("default_profile"),
-                    save_path_function=self._save_received_file_path,
-                )
+                try:
+                    self.manager = TransferManager(
+                        self.mesh,
+                        save_function=self._save_received_file,
+                        profile_name=settings.get("default_profile"),
+                        save_path_function=self._save_received_file_path,
+                    )
+                except ValueError as e:
+                    self.mesh.close()
+                    self.mesh = None
+                    self.device = None
+                    raise HTTPException(status_code=400, detail=str(e)) from e
                 self.mesh.add_on_receive(self._on_receive)
                 return {"connected": True, "device": self.device}
             except Exception as e:
@@ -75,6 +81,11 @@ class RuntimeState:
 
     def disconnect(self) -> Dict[str, Any]:
         with self._lock:
+            if self.manager is not None:
+                try:
+                    self.manager.close()
+                except Exception as e:
+                    logger.warning(f"Error while closing transfer manager: {e}")
             if self.mesh is not None:
                 try:
                     self.mesh.close()
@@ -92,6 +103,11 @@ class RuntimeState:
             recipient_id = request.recipient_id or settings.get("default_mesh_node")
             if not recipient_id:
                 raise HTTPException(status_code=400, detail="recipient_id is required.")
+            if recipient_id == "!ffffffff":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Refusing to send an encrypted transfer to the broadcast node !ffffffff.",
+                )
             filepath = Path(request.filepath).expanduser()
             if not filepath.exists() or not filepath.is_file():
                 raise HTTPException(status_code=400, detail="filepath must point to an existing file.")
@@ -147,7 +163,7 @@ class RuntimeState:
         while filepath.exists():
             filepath = save_dir / f"{base}_{counter}{ext}"
             counter += 1
-        os.replace(source_path, filepath)
+        publish_file(source_path, filepath)
 
     def _on_receive(self, packet, interface) -> None:
         payload = packet.get("decoded", {}).get("payload")
@@ -223,5 +239,11 @@ def index():
 def start_server():
     host = settings.get("ui_host", "127.0.0.1")
     port = int(settings.get("ui_port", 8080))
+    if host not in {"127.0.0.1", "localhost", "::1"}:
+        logger.warning(
+            "UI host %s is not loopback. The dashboard has no authentication; "
+            "keep it on localhost unless you terminate TLS and add an access proxy.",
+            host,
+        )
     logger.info(f"Starting Akita UI on http://{host}:{port}")
     uvicorn.run(app, host=host, port=port, log_level=settings.get("log_level", "INFO").lower())

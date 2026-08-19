@@ -1,5 +1,5 @@
 # Core dependencies for Akita Supermodem
-protobuf>=7.34.1,<8.0.0 # Compatible with checked-in protoc-generated code
+protobuf>=7.35.1,<8.0.0 # Compatible with checked-in protoc-generated code
 meshtastic>=2.0.0 # Specify the version you are targeting
 cryptography>=41.0.0 # For End-to-End Encryption (E2EE)
 

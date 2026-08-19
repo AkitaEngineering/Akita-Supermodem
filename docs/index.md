@@ -37,21 +37,21 @@ Akita Supermodem provides a robust file transfer mechanism suitable for low-band
 * [Release Runbook](release_runbook.md)
 * [UAS/UAV Readiness Notes](uas_uav.md)
 * [Examples](../examples/)
-* [Improvements Summary](../IMPROVEMENTS_SUMMARY.md) - Recent enhancements and improvements
+* [Change Log](../CHANGELOG.md)
 
 ## Recent Improvements
 
-Version 0.1.0 includes significant improvements:
+Version 0.2.1 (2026-08-19) includes:
 
-* **Thread Safety:** Full thread-safe operation for concurrent transfers
-* **Memory Efficiency:** Large files are streamed in chunks instead of loaded entirely into memory
-* **Error Tracking:** Comprehensive error tracking and automatic failure detection
-* **Authenticated Encryption:** Secure transfer path with PSK-authenticated sessions for the `uas` profile
-* **Replay Resistance:** Encrypted payload sequence numbers are authenticated and rejected on replay
-* **Adaptive Compression:** Compressible chunks are compressed only when it reduces payload size
-* **Logging:** Professional logging system replacing print statements
-* **Security:** Filename sanitization prevents path traversal attacks
-* **Testing:** Comprehensive unit test suite
+* **CRC-32C:** Castagnoli CRC on every piece and the assembled file, plus SHA-256 Merkle checks
+* **Sliding Window:** Worker-thread sender with a small in-flight window for slow, lossy radio links
+* **Authenticated Encryption:** Every profile requires a 16+ byte `AKITA_SUPERMODEM_PSK`
+* **Replay Window:** Duplicate and stale encrypted sequences are rejected
+* **Handshake Retry:** Lost key-exchange packets are retried, then the transfer fails cleanly
+* **Save Failures:** A failed publish no longer reports the transfer as complete
+* **Testing and CI:** Fake-mesh integration tests plus GitHub Actions
+* **Restart resume:** PSK-sealed receive checkpoints survive a receiver process crash
+* **HITL:** `akita-supermodem hitl` runs a two-radio bench transfer and signs the result
 
-See [IMPROVEMENTS_SUMMARY.md](../IMPROVEMENTS_SUMMARY.md) for complete details.
+See [CHANGELOG.md](../CHANGELOG.md) for the full history.
 

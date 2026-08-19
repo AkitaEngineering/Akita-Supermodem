@@ -89,8 +89,8 @@ class AkitaSender:
         self.send_delays: Dict[str, float] = {}
         # Store retry counts per recipient (for rate control)
         self.retry_counts: Dict[str, int] = {}
-        # Thread lock for thread-safe access to shared state
-        self._lock = threading.Lock()
+        # Re-entrant lock so nested helpers can share transfer state safely.
+        self._lock = threading.RLock()
 
         logger.info(
             f"AkitaSender initialized. Piece Size: {piece_size}, Merkle Root: {use_merkle_root}"

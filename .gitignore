@@ -62,11 +62,20 @@ Thumbs.db
 *.log
 *.tmp
 
-# Review files
-
+# Local review notes and working documents — do not commit
 CODE_REVIEW.md
 CODE_REVIEW_STATUS.md
 IMPROVEMENTS_SUMMARY.md
 DOCUMENTATION_UPDATES.md
 ADDITIONAL_IMPROVEMENTS.md
+NOTES.md
+*.local.md
+
+# Operator / runtime artifacts
+received_files/
+hitl_received/
+checkpoints/
+*.part
+*.sig
+akita_ed25519.key
 

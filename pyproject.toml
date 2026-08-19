@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "akita-supermodem"
-version = "0.1.0"
+version = "0.2.1"
 authors = [
   { name="Akita Engineering", email="info@akitaengineering.com" },
 ]
@@ -22,7 +22,7 @@ classifiers = [
     "Development Status :: 4 - Beta",
 ]
 dependencies = [
-    "protobuf>=7.34.1,<8.0.0",
+    "protobuf>=7.35.1,<8.0.0",
     "meshtastic>=2.0.0",
     "cryptography>=41.0.0",
     "fastapi>=0.100.0",

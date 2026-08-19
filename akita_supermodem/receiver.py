@@ -87,8 +87,8 @@ class AkitaReceiver:
         # Timestamp of the last time ResumeRequests were potentially sent for each transfer
         self.last_request_time: Dict[str, float] = {}
 
-        # Thread lock for thread-safe access to shared state
-        self._lock = threading.Lock()
+        # Re-entrant lock: several methods call cleanup_transfer while already holding it.
+        self._lock = threading.RLock()
 
         logger.info(
             f"AkitaReceiver initialized. Max Retries: {max_retries}, Request Interval: {request_interval}s"

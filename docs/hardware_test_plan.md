@@ -16,10 +16,17 @@ and simulation.
 1. Install the same package version on both endpoints.
 2. Set `AKITA_SUPERMODEM_PSK` on both endpoints.
 3. Confirm profile selection with `akita-supermodem config default_profile uas`.
-4. Transfer a 1 KB artifact.
-5. Transfer a 100 KB artifact.
-6. Confirm received hashes and signatures.
-7. Capture logs from both endpoints.
+4. If both radios are attached to one computer, run:
+
+   ```bash
+   export AKITA_SUPERMODEM_PSK="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+   akita-supermodem hitl --sender-port /dev/ttyUSB0 --receiver-port /dev/ttyUSB1 --file testdata/1k.bin --profile uas
+   ```
+
+5. Transfer a 1 KB artifact.
+6. Transfer a 100 KB artifact.
+7. Confirm received hashes and signatures with `akita-supermodem verify`.
+8. Capture logs from both endpoints.
 
 ## RF Test Matrix
 

@@ -76,6 +76,27 @@ class CryptoManager:
             logger.error(f"Error deriving shared key: {e}")
             return False
 
+    def export_shared_key(self) -> Optional[bytes]:
+        """Returns the derived 32-byte session key, or None if not ready."""
+        return self._shared_key
+
+    @classmethod
+    def from_shared_key(
+        cls,
+        shared_key: bytes,
+        encryption_enabled: bool = True,
+        pre_shared_key: Optional[bytes] = None,
+    ) -> "CryptoManager":
+        """Restores a session cipher from a previously derived shared key."""
+        manager = cls.__new__(cls)
+        manager.encryption_enabled = encryption_enabled
+        manager.pre_shared_key = pre_shared_key
+        manager._private_key = None
+        manager._public_key = None
+        manager._shared_key = shared_key
+        manager._chacha = ChaCha20Poly1305(shared_key) if encryption_enabled else None
+        return manager
+
     def is_ready(self) -> bool:
         """Returns True if the shared key has been derived and cipher is ready."""
         if not self.encryption_enabled:
